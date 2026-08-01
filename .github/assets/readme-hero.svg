@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="420" viewBox="0 0 1120 420" role="img" aria-labelledby="title desc">
+  <title id="title">DayVault hardware overview</title>
+  <desc id="desc">A compact overview of dual PDM capture, STM32L452 control, microSD storage, USB-C export, and audio-to-text archival.</desc>
+  <defs>
+    <filter id="shadow" x="-10%" y="-15%" width="120%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#173B32" flood-opacity="0.12" />
+    </filter>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#268E83" />
+    </marker>
+  </defs>
+
+  <rect width="1120" height="420" rx="28" fill="#F4F7F4" />
+  <path d="M0 318 C210 252 322 374 528 324 C744 270 866 300 1120 214 L1120 420 L0 420 Z" fill="#DCEDE5" />
+  <path d="M868 0 A252 252 0 0 1 1120 252 L1120 0 Z" fill="#EEE4D4" />
+
+  <g filter="url(#shadow)">
+    <rect x="68" y="58" width="984" height="284" rx="18" fill="#FFFFFF" />
+  </g>
+
+  <rect x="90" y="80" width="330" height="240" rx="14" fill="#173B32" />
+  <circle cx="136" cy="127" r="25" fill="#E7F3ED" />
+  <rect x="129" y="111" width="14" height="24" rx="7" fill="#173B32" />
+  <path d="M123 128 V132 C123 141 149 141 149 132 V128 M136 141 V148 M128 148 H144" fill="none" stroke="#173B32" stroke-width="3" stroke-linecap="round" />
+  <text x="176" y="123" fill="#9BCDBB" font-family="Inter, Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="1.6">HARDWARE PROJECT</text>
+  <text x="112" y="184" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="38" font-weight="750">DayVault</text>
+  <text x="112" y="212" fill="#C6DED5" font-family="Inter, Arial, sans-serif" font-size="16">Wearable voice logger</text>
+  <rect x="112" y="236" width="158" height="30" rx="15" fill="#EDE3D1" />
+  <text x="132" y="256" fill="#493D2B" font-family="Inter, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.1">DESIGN SNAPSHOT</text>
+  <circle cx="116" cy="293" r="4" fill="#E7B85C" />
+  <text x="130" y="298" fill="#C6DED5" font-family="Inter, Arial, sans-serif" font-size="12">Engineering review in progress</text>
+
+  <g font-family="Inter, Arial, sans-serif">
+    <rect x="448" y="80" width="184" height="108" rx="12" fill="#F1F7F4" stroke="#D9E9E1" />
+    <text x="468" y="108" fill="#65766F" font-size="10" font-weight="700" letter-spacing="1.4">CAPTURE</text>
+    <text x="468" y="142" fill="#173B32" font-size="23" font-weight="750">2x PDM</text>
+    <text x="468" y="166" fill="#65766F" font-size="12">digital microphones</text>
+
+    <rect x="650" y="80" width="184" height="108" rx="12" fill="#F7F3EC" stroke="#E9DFD0" />
+    <text x="670" y="108" fill="#7A7062" font-size="10" font-weight="700" letter-spacing="1.4">STORE</text>
+    <text x="670" y="142" fill="#3F382E" font-size="23" font-weight="750">microSD</text>
+    <text x="670" y="166" fill="#7A7062" font-size="12">local audio files</text>
+
+    <rect x="852" y="80" width="184" height="108" rx="12" fill="#F2F0F8" stroke="#E2DDF0" />
+    <text x="872" y="108" fill="#716987" font-size="10" font-weight="700" letter-spacing="1.4">EXPORT</text>
+    <text x="872" y="142" fill="#443D59" font-size="23" font-weight="750">USB-C</text>
+    <text x="872" y="166" fill="#716987" font-size="12">data + charging</text>
+
+    <path d="M632 134 H647" stroke="#268E83" stroke-width="2.5" marker-end="url(#arrow)" />
+    <path d="M834 134 H849" stroke="#268E83" stroke-width="2.5" marker-end="url(#arrow)" />
+
+    <rect x="448" y="206" width="390" height="112" rx="12" fill="#173B32" />
+    <text x="470" y="234" fill="#9BCDBB" font-size="10" font-weight="700" letter-spacing="1.4">CONTROL</text>
+    <text x="470" y="270" fill="#FFFFFF" font-size="25" font-weight="750">STM32L452</text>
+    <text x="470" y="296" fill="#C6DED5" font-size="12">DFSDM  |  RTC  |  BATTERY ADC</text>
+    <path d="M708 242 C754 222 792 228 817 251" fill="none" stroke="#A891D4" stroke-width="2" stroke-dasharray="5 5" />
+    <circle cx="716" cy="244" r="4" fill="#A891D4" />
+    <circle cx="813" cy="249" r="4" fill="#A891D4" />
+
+    <rect x="852" y="206" width="184" height="112" rx="12" fill="#E8F2EE" stroke="#D2E5DD" />
+    <text x="872" y="234" fill="#65766F" font-size="10" font-weight="700" letter-spacing="1.4">ARCHIVE</text>
+    <text x="872" y="269" fill="#173B32" font-size="19" font-weight="750">AUDIO TO TEXT</text>
+    <text x="872" y="296" fill="#65766F" font-size="12">searchable, off-device</text>
+  </g>
+
+  <path d="M838 262 H849" stroke="#268E83" stroke-width="2.5" marker-end="url(#arrow)" />
+  <text x="68" y="382" fill="#51645D" font-family="Inter, Arial, sans-serif" font-size="12">LOCAL-FIRST RECORDING  /  DOCUMENTED HARDWARE  /  MEASURE BEFORE CLAIMING</text>
+</svg>

@@ -1,0 +1,60 @@
+name: Hardware review
+description: Report a schematic, PCB, power, signal-integrity, or component issue.
+title: "[Hardware] "
+labels:
+  - hardware
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reviewing DayVault. Tie every finding to the saved revision and include evidence whenever possible.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Schematic
+        - PCB layout
+        - Power and charging
+        - PDM audio
+        - USB
+        - microSD
+        - RTC and timekeeping
+        - BOM or footprint
+        - Manufacturing
+    validations:
+      required: true
+  - type: input
+    id: references
+    attributes:
+      label: Nets, pins, or reference designators
+      placeholder: "Example: U5 PB12, PDM_DATA_3V3, R9/R10"
+    validations:
+      required: true
+  - type: textarea
+    id: finding
+    attributes:
+      label: Finding
+      description: Describe the observed connection, failure mode, or manufacturing risk.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Link a datasheet section, DRC output, screenshot, measurement, or reproducible test.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Explain the smallest design or documentation change that resolves the issue.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Review checks
+      options:
+        - label: I checked Docs/06-Known-Issues.md for an existing entry.
+          required: true
+        - label: I am describing the saved repository revision, or I clearly marked the proposal as a future revision.
+          required: true

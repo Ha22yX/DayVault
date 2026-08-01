@@ -1,0 +1,31 @@
+name: Documentation correction
+description: Report an inaccurate, unclear, stale, or broken document.
+title: "[Docs] "
+labels:
+  - documentation
+body:
+  - type: input
+    id: file
+    attributes:
+      label: File or section
+      placeholder: "Docs/02-MCU-Pinout.md, Required stereo PDM revision"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong or unclear?
+    validations:
+      required: true
+  - type: textarea
+    id: correction
+    attributes:
+      label: Suggested correction
+      description: Include supporting net names, designators, or sources when the change affects a hardware claim.
+  - type: checkboxes
+    id: alignment
+    attributes:
+      label: Alignment check
+      options:
+        - label: I checked whether the English and Chinese entry points need the same correction.
+          required: true

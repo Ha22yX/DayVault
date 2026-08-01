@@ -2,6 +2,8 @@
 
 *.md text eol=lf
 *.json text eol=lf
+*.yml text eol=lf
+*.svg text eol=lf
 *.gitignore text eol=lf
 .gitattributes text eol=lf
 

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Development documentation
+    url: https://github.com/Ha22yX/DayVault/tree/main/Docs
+    about: Check the pin map, bring-up guide, and known-issues register before filing a report.
