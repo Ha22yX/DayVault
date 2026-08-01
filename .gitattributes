@@ -1,0 +1,9 @@
+* text=auto
+
+*.md text eol=lf
+*.json text eol=lf
+*.gitignore text eol=lf
+.gitattributes text eol=lf
+
+*.eprj2 binary
+*.epro2 binary

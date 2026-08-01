@@ -1,0 +1,20 @@
+# EasyEDA temporary and lock files
+*.tmp
+*.lock
+~$*
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Firmware build output
+build/
+Debug/
+Release/
+*.elf
+*.hex
+*.bin
+*.map
+
