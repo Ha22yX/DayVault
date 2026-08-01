@@ -25,20 +25,10 @@
 
 ## Why I Built DayVault
 
-DayVault is not a product I am building to sell. It started with a personal idea: I want a
-small device that can stay with me throughout the day and record what I say, the conversations
-I take part in, and the ordinary moments that are easy to forget.
-
-The problem is not simply whether audio can be recorded; a phone can already do that. The
-problem is making the process small, dependable, and unobtrusive enough to become part of
-daily life. Every evening, I want to export that day's audio, transcribe it with AI, and save
-the result as a dated, searchable archive. In the future, I should be able to look back and
-see what I did, what I discussed, and how my life changed over time.
-
-DayVault is the hardware I am designing for that workflow: a wearable recorder with local
-storage, all-day power as a design target, accurate timestamps, and one USB-C connection for
-charging and exporting data. I enjoy having a trail of my life that I can revisit, and this
-project is my attempt to make that habit practical.
+I want a small device that can stay with me throughout the day and continuously record my
+life: what I say, the conversations I take part in, and everyday moments that might otherwise
+be forgotten. Each night, I can export the audio, transcribe it with AI, and save it as a
+dated, searchable record that I can revisit later.
 
 The project is intentionally hardware-first. This repository preserves the EasyEDA design,
 an API-exported netlist, a complete MCU pin map, bring-up guidance, and an explicit list of
