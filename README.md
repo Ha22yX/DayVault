@@ -1,7 +1,7 @@
 <h1 align="center">DayVault</h1>
 
 <p align="center">
-  A documented hardware design for a compact, battery-powered voice logger that records a day locally and turns it into a searchable personal archive.
+  A personal wearable voice-logging project for recording everyday conversations, exporting them at night, and turning them into a written record of life.
 </p>
 
 <p align="center">
@@ -23,12 +23,22 @@
   <img src=".github/assets/readme-hero.svg" alt="DayVault hardware overview showing dual PDM capture, STM32L452 control, microSD storage, USB-C export, and audio-to-text archival" />
 </p>
 
-## Why DayVault
+## Why I Built DayVault
 
-Phones can record conversations, but they are not designed to be a small, predictable,
-all-day capture device. DayVault explores a dedicated alternative: two low-power digital
-microphones feed an STM32, audio is stored locally on microSD, and recordings are exported
-over USB-C for offline speech-to-text and personal archiving.
+DayVault is not a product I am building to sell. It started with a personal idea: I want a
+small device that can stay with me throughout the day and record what I say, the conversations
+I take part in, and the ordinary moments that are easy to forget.
+
+The problem is not simply whether audio can be recorded; a phone can already do that. The
+problem is making the process small, dependable, and unobtrusive enough to become part of
+daily life. Every evening, I want to export that day's audio, transcribe it with AI, and save
+the result as a dated, searchable archive. In the future, I should be able to look back and
+see what I did, what I discussed, and how my life changed over time.
+
+DayVault is the hardware I am designing for that workflow: a wearable recorder with local
+storage, all-day power as a design target, accurate timestamps, and one USB-C connection for
+charging and exporting data. I enjoy having a trail of my life that I can revisit, and this
+project is my attempt to make that habit practical.
 
 The project is intentionally hardware-first. This repository preserves the EasyEDA design,
 an API-exported netlist, a complete MCU pin map, bring-up guidance, and an explicit list of
@@ -43,6 +53,24 @@ outputs.
 | One connector for charging and data | USB-C with USB Full Speed, ROM DFU, and 100 mA charging |
 | Reliable timestamps | STM32 RTC with a 32.768 kHz crystal |
 | Host-side life archive | Export audio, then transcribe and index it off-device |
+
+## Hardware Design
+
+These images show the current EasyEDA design snapshot. They document the work in progress;
+they are not manufacturing files and still contain the blockers listed in
+[Docs/06-Known-Issues.md](Docs/06-Known-Issues.md).
+
+### Schematic
+
+![DayVault schematic showing the STM32L452, dual PDM microphones, microSD, USB-C, charging, power conversion, RTC, and protection circuits](.github/assets/dayvault-schematic.png)
+
+*Current full-system schematic.*
+
+### PCB Layout
+
+![Current DayVault PCB layout in EasyEDA](.github/assets/dayvault-pcb-layout.png)
+
+*Current PCB layout snapshot. Routing, ground plane, and DRC issues still require revision.*
 
 ## Hardware At A Glance
 
