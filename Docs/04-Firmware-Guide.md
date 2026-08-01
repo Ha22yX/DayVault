@@ -7,20 +7,21 @@ Bring the board up in this order before adding compression or noise reduction:
 1. Internal system clock, GPIO, serial/SWD diagnostics, and RTC LSE.
 2. Battery ADC and USB insertion input.
 3. SPI1 microSD initialization and a sustained write test.
-4. One PDM microphone through DFSDM and DMA.
+4. One PDM edge through PB12/DFSDM Channel 1 and DMA.
 5. Valid mono WAV file written in fixed-duration segments.
 6. USB device mode and host time synchronization.
 7. Low-battery shutdown and recovery.
-8. Stereo hardware revision, dual-channel capture, DSP, and compression.
+8. Redirected Channel 0, dual-channel capture, DSP, and compression.
 
-The saved PCB should be treated as a mono bring-up board because its PDM data is on
-DFSDM1_DATIN0. See [02-MCU-Pinout.md](02-MCU-Pinout.md).
+The saved PCB routes PDM data to PB12/DFSDM1_DATIN1, which supports the intended paired
+Channel 1/Channel 0 topology. Treat stereo as unverified until both channels pass the tests
+in [05-Bringup-and-Test.md](05-Bringup-and-Test.md).
 
 ## Peripheral allocation
 
 | Function | Peripheral/pins | Suggested implementation |
 | --- | --- | --- |
-| PDM input | DFSDM1, PC2 clock and current PB1 data | DMA double buffer; mono on current board. |
+| PDM input | DFSDM1, PC2 clock and PB12/DATIN1 data | DMA double buffer; validate Channel 1 mono first, then redirected Channel 0. |
 | microSD | SPI1, PA4/PA5/PA6/PA7 | FatFs over HAL/LL SPI with DMA where practical. |
 | USB | USB FS, PA11/PA12 | Device stack: DFU is ROM bootloader; application may expose MSC/CDC. |
 | Battery ADC | PA0 | ADC1, long sample time, averaged readings. |
@@ -48,17 +49,17 @@ writing to the same card.
 
 ## PDM capture
 
-### Current board: mono
+### Current board: PB12/DATIN1
 
 - PC2 produces the DFSDM clock; the TXU0202 converts it from 3.3 V to 1.8 V.
-- PB1 receives the level-shifted shared data line as DFSDM1_DATIN0.
+- PB12 receives the level-shifted shared data line as DFSDM1_DATIN1.
 - Start with one microphone/one clock edge and verify polarity, gain, and data integrity.
 - Use DMA ping-pong buffers so SD latency never blocks the acquisition interrupt.
 - Monitor buffer overruns and save an overrun counter with each file/session.
 
-### Revised board: two microphones on one data wire
+### Two microphones on one data wire
 
-After moving data to PB12/DFSDM1_DATIN1:
+With the current PB12/DFSDM1_DATIN1 assignment:
 
 - Configure channel 1 for direct `DATIN1` reception.
 - Configure channel 0 for redirected reception from channel 1.

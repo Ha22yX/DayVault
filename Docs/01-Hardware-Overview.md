@@ -45,10 +45,11 @@ flowchart LR
 3. Both SPH0655 microphones share `PDM_CLK` and `PDM_DATA`.
 4. U1 `SELECT` is low and U2 `SELECT` is high, so they drive opposite clock edges.
 5. TXU0202 channel A1-to-B1 translates `PDM_DATA` to `PDM_DATA_3V3`.
-6. The current PCB sends data to `PB1/DFSDM1_DATIN0`.
+6. The current schematic and PCB send data to `PB12/DFSDM1_DATIN1`; PB1 is unconnected.
 
-The final point supports a mono bring-up but is not the correct pin for the intended
-two-microphone, one-wire stereo DFSDM configuration. See `06-Known-Issues.md`.
+This assignment supports the intended consecutive Channel 1/Channel 0 single-wire stereo
+topology. It is verified in the saved design and API-exported netlist, but dual-channel
+firmware and physical audio capture are still unverified. See `06-Known-Issues.md`.
 
 ## Storage path
 
@@ -97,4 +98,3 @@ R7 and R8 form a 1 MOhm / 1 MOhm divider from `BAT` to `BAT_SENSE`; C23 is 100 n
 ground. PA0 measures half the battery voltage. At a 4.2 V battery, the ADC input is about
 2.1 V. The source resistance is high, so use a long ADC sample time and allow at least
 250 ms after power-up for the RC node to settle before relying on the first reading.
-

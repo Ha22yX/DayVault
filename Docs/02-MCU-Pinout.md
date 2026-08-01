@@ -10,7 +10,7 @@ schematic; it does not mean the pin may be driven arbitrarily.
 | --- | --- | --- | --- | --- |
 | Battery voltage | `BAT_SENSE` | PA0, pin 14 | ADC1 input | Read the 1:1 divider using a long ADC sample time. |
 | PDM clock | `PDM_CLK_3V3` | PC2, pin 10 | DFSDM1_CKOUT | Generate the microphone clock. |
-| PDM data, current | `PDM_DATA_3V3` | PB1, pin 27 | DFSDM1_DATIN0 | One-microphone/mono bring-up only; see required revision below. |
+| PDM data | `PDM_DATA_3V3` | PB12, pin 33 | DFSDM1_DATIN1 | Channel 1 direct input; redirect Channel 0 to the same serial input for the opposite PDM edge. |
 | microSD chip select | `SD_CS` | PA4, pin 20 | GPIO output | Idle high; assert low for card transactions. |
 | microSD clock | `SD_SCK` | PA5, pin 21 | SPI1_SCK | SPI mode 0 is the normal starting point. |
 | microSD data to MCU | `SD_MISO` | PA6, pin 22 | SPI1_MISO | Card DO. |
@@ -25,23 +25,24 @@ schematic; it does not mean the pin may be driven arbitrarily.
 | Reset | internal net `$1N49` | NRST, pin 7 | NRST | 10 kOhm pull-up, 100 nF to GND, pushbutton to GND. |
 | ROM boot select | internal net `$1N47` | PH3/BOOT0, pin 60 | BOOT0 | 10 kOhm pull-down, pushbutton to 3.3 V. |
 
-## Required stereo PDM revision
+## Stereo PDM assignment and validation status
 
-The current board connects the shared microphone data line to
-`PB1/DFSDM1_DATIN0`. STM32 DFSDM single-wire stereo reception requires a pair of
-consecutive channels, `x` and `x-1`, fed from `DATINx`; therefore `x` must be at least 1.
-`DATIN0` cannot form that pair.
+The saved schematic, exported netlist, and PCB now connect the shared microphone data line
+to `PB12/DFSDM1_DATIN1`. PB1, pin 27, is unconnected. STM32 DFSDM single-wire stereo uses
+two consecutive channels, `x` and `x-1`, fed from `DATINx`; the selected `x = 1` assignment
+therefore permits Channel 1 plus redirected Channel 0.
 
-Before ordering the stereo revision:
+Firmware and bring-up must still prove the topology:
 
-1. Disconnect `PDM_DATA_3V3` from PB1, pin 27.
-2. Connect `PDM_DATA_3V3` to PB12, pin 33, which supports `DFSDM1_DATIN1`.
-3. Leave PB1 unconnected unless another function is deliberately assigned.
-4. In firmware, configure DFSDM channel 1 as direct input and channel 0 as redirected
-   input, sample opposite clock edges, and feed two filters/DMA streams.
+1. Configure DFSDM Channel 1 for direct `DATIN1` reception.
+2. Redirect Channel 0 to Channel 1's serial input.
+3. Sample opposite clock edges for the two microphone SELECT phases.
+4. Feed the channels through separate DFSDM filters/DMA streams and verify channel identity,
+   gain, relative delay, and simultaneous capture.
+5. Start with Channel 1 only if a simpler mono baseline is needed.
 
-With the current PCB, develop and verify mono capture first. Do not claim two independent
-microphone channels until this revision is made and tested.
+The design connection is complete, but two independent microphone channels must not be
+claimed until firmware and assembled-hardware tests pass.
 
 ## Complete 64-pin map
 
@@ -73,13 +74,13 @@ microphone channels until this revision is made and tested.
 | 24 | PC4 | NC | Spare. |
 | 25 | PC5 | NC | Spare. |
 | 26 | PB0 | NC | Spare. |
-| 27 | PB1 | `PDM_DATA_3V3` | Current DFSDM1_DATIN0; move to PB12 for stereo. |
+| 27 | PB1 | NC | Spare; former PDM data endpoint. |
 | 28 | PB2 | NC | Spare/boot-related restrictions must be checked before use. |
 | 29 | PB10 | NC | Spare. |
 | 30 | PB11 | NC | Spare. |
 | 31 | VSS | `GND` | Digital ground. |
 | 32 | VDD | `3V3` | Digital supply. |
-| 33 | PB12 | NC | Recommended future `DFSDM1_DATIN1`. |
+| 33 | PB12 | `PDM_DATA_3V3` | DFSDM1_DATIN1; direct Channel 1 plus redirected Channel 0. |
 | 34 | PB13 | NC | Spare. |
 | 35 | PB14 | NC | Spare. |
 | 36 | PB15 | NC | Spare. |
@@ -114,7 +115,7 @@ microphone channels until this revision is made and tested.
 
 ## Firmware reservation rules
 
-- Do not repurpose PA11, PA12, PA13, PA14, PC14, PC15, or the selected DFSDM pins.
+- Do not repurpose PA11, PA12, PA13, PA14, PB12, PC2, PC14, or PC15.
 - Keep PA13/PA14 physically accessible even though USB DFU is planned; SWD is the recovery
   path for clock, option-byte, bootloader, and early-startup failures.
 - Configure unused GPIOs in analog mode with no pull, unless a peripheral datasheet or board

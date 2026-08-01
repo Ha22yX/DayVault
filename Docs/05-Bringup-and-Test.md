@@ -93,7 +93,7 @@ Run tests with at least two card models and with a nearly full, fragmented files
 
 ## 9. PDM microphone test
 
-Current board acceptance is mono:
+Begin with a mono baseline even though the current board is wired for paired stereo:
 
 - [ ] PDM clock is present at MCU side (`PDM_CLK_3V3`) and microphone side (`PDM_CLK`).
 - [ ] Clock amplitudes remain inside their respective 3.3 V and 1.8 V rails.
@@ -103,8 +103,8 @@ Current board acceptance is mono:
 - [ ] Speech is intelligible at the intended mounting distance.
 - [ ] Stopping PDM clock substantially reduces microphone current.
 
-After moving data to PB12 for stereo, separately confirm both SELECT phases, channel identity,
-gain matching, relative delay, and simultaneous DMA operation.
+After the mono baseline passes, enable redirected Channel 0 and separately confirm both
+SELECT phases, channel identity, gain matching, relative delay, and simultaneous DMA operation.
 
 ## 10. Charger and battery test
 

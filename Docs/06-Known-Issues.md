@@ -1,21 +1,24 @@
 # Known Issues and Required Revisions
 
-Status snapshot: 2026-08-01. This file deliberately distinguishes a saved connection from
-a verified design. Closing an item requires a schematic/PCB change, test evidence, and a
-Git commit; deleting the text is not closure.
+Status snapshot: 2026-08-01, re-inspected through the EasyEDA API after the PB12 and
+`USB_DETECT` PCB updates. This file deliberately distinguishes a saved connection from a
+verified design. Closing an item requires a schematic/PCB change, test evidence, and a Git
+commit; deleting the text is not closure.
 
 ## Release blockers
 
-### DV-001: current PDM data pin cannot implement intended one-wire stereo
+### DV-001: PB12 stereo assignment is implemented but not validated
 
-**Status:** Open, schematic and PCB change required.
+**Status:** Design change complete; firmware and assembled-hardware validation remain open.
 
-`PDM_DATA_3V3` currently terminates at PB1/DFSDM1_DATIN0. STM32 DFSDM one-wire stereo uses
-two consecutive channels `x` and `x-1` from input `DATINx`; DATIN0 has no lower partner.
+The saved schematic, exported netlist, and PCB now terminate `PDM_DATA_3V3` at
+PB12/DFSDM1_DATIN1. PB1 is NC. STM32 DFSDM one-wire stereo uses two consecutive channels
+`x` and `x-1` from input `DATINx`; the selected `x = 1` assignment supports direct Channel 1
+plus redirected Channel 0.
 
-**Required change:** move the net to PB12/DFSDM1_DATIN1 and use channel 1 direct plus
-channel 0 redirected with opposite sampling edges. Current hardware is acceptable only for
-mono bring-up until proven otherwise.
+**Required validation:** configure Channel 1 direct plus Channel 0 redirected with opposite
+sampling edges, use separate filters/DMA streams, and verify channel identity, simultaneous
+capture, gain, and relative delay on assembled hardware. Begin with a Channel 1 mono baseline.
 
 References:
 
@@ -23,32 +26,33 @@ References:
 - [ST AN4990: Getting started with sigma-delta digital interface on STM32](https://www.st.com/content/ccc/resource/technical/document/application_note/group0/b2/44/42/9d/46/b4/4d/34/DM00354333/files/DM00354333.pdf/jcr%3Acontent/translations/en.DM00354333.pdf)
 - [STM32L452RC datasheet](https://www.st.com/resource/en/datasheet/stm32l452rc.pdf)
 
-### DV-002: schematic and PCB are not synchronized
+### DV-002: DRC still reports a schematic/PCB netlist mismatch
 
 **Status:** Open.
 
-The exported schematic netlist contains 50 components, while the API inspection found 47
-PCB components. R9, R10, and C26 for `USB_DETECT` were added to the schematic but were not
-synchronized/placed/routed on the PCB at the time of this snapshot.
+The API now finds 50 schematic components and 50 PCB components. R9, R10, and C26 are placed
+and routed for `USB_DETECT`; U5 PB12 carries `PDM_DATA_3V3` in both the exported schematic
+netlist and PCB pad data. However, a fresh strict DRC still reports one generic `Netlist Error`
+stating that the PCB and schematic netlists do not match.
 
-**Required change:** update PCB from schematic, place the divider/filter, connect PA9, rerun
-DRC, and re-export the netlist before generating manufacturing files.
+**Required change:** run EasyEDA's update-PCB/import-changes comparison, inspect every
+remaining difference, accept only intended changes, and rerun strict DRC until the netlist
+error disappears. Re-export the netlist afterward.
 
 ### DV-003: PCB DRC is not clean
 
 **Status:** Open.
 
-The inspected PCB reported 152 DRC errors. Most are component/body or device-to-through-hole
-clearance warnings associated with the intentionally compact placement, which the project
-owner chose not to optimize at this stage. However, the report also includes electrical
-copper clearances that cannot be waived merely as component-distance issues:
+The fresh strict API DRC reports **59 findings**: 58 clearance errors plus the one netlist
+error tracked in DV-002. The clearance groups are:
 
+- 4 track-to-track clearances.
+- 10 SMD-pad-to-track clearances.
 - 4 through-hole-pad-to-track clearances.
-- 4 hole-to-track clearances.
 - 1 SMD-pad-to-through-hole-pad clearance.
 - 1 hole-to-SMD-pad clearance.
-- 1 SMD-pad-to-slot clearance.
-- 2 USB-footprint internal slot clearances requiring footprint review.
+- 37 slot-region-to-track clearances.
+- 1 SMD-pad-to-slot-region clearance.
 
 **Required change:** inspect each non-body violation by coordinates/nets, remove all possible
 shorts and manufacturing-rule violations, and keep a signed-off DRC report.
@@ -158,9 +162,9 @@ CubeMX and on hardware; do not copy an HSE-based clock tree from another board.
 
 ### DV-017: USB_DETECT input margin should be measured
 
-The equal 100 kOhm divider produces about 2.5 V at nominal 5 V VBUS. This is expected to be
-read as high by a 3.3 V GPIO, but the worst-case VBUS, resistor tolerance, MCU input threshold,
-and startup state should be checked. The schematic addition is not yet on the PCB.
+The equal 100 kOhm divider produces about 2.5 V at nominal 5 V VBUS. R9, R10, and C26 are now
+placed and routed on the PCB, but the worst-case VBUS, resistor tolerance, MCU input threshold,
+startup state, and attach/detach filtering still require measurement.
 
 ### DV-018: microphone mechanics are not electrically verifiable
 

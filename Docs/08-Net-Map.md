@@ -15,7 +15,7 @@ EasyEDA API export dated 2026-08-01. Endpoint notation is `reference.pin (pin na
 | `PDM_CLK` | U1.4 CLOCK; U2.4 CLOCK; U7.4 A2Y |
 | `PDM_CLK_3V3` | U5.10 PC2; U7.1 B2 |
 | `PDM_DATA` | U1.1 DATA; U2.1 DATA; U7.5 A1 |
-| `PDM_DATA_3V3` | U5.27 PB1; U7.8 B1Y. Required revision: move MCU endpoint to U5.33 PB12. |
+| `PDM_DATA_3V3` | U5.33 PB12; U7.8 B1Y. U5.27 PB1 is NC. |
 | `SD_CS` | CARD1.2 DAT3/CS; R6.2; U5.20 PA4 |
 | `SD_SCK` | CARD1.5 CLK; U5.21 PA5 |
 | `SD_MISO` | CARD1.7 DAT0/DO; U5.22 PA6 |

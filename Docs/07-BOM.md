@@ -75,4 +75,5 @@ Selection requirements:
 - Confirm L1 saturation current and DCR for worst-case converter load.
 - Confirm the selected 400 mAh cell permits the programmed approximately 100 mA charge rate.
 - Freeze passive manufacturer parts and voltage/tolerance/dielectric fields before production.
-- Regenerate this table after the required PDM pin and USB_DETECT PCB revisions.
+- Regenerate this table after any future schematic/PCB change and reconcile the remaining
+  DRC-reported netlist mismatch before manufacturing release.

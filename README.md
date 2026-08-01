@@ -88,10 +88,10 @@ known state.
 | --- | --- | --- |
 | Schematic | Archived | EasyEDA source and exported netlist are versioned |
 | Pin documentation | Documented | Complete STM32L452 64-pin map and net-centric map are included |
-| Mono PDM bring-up | Electrically planned | Current snapshot routes PDM data to `PB1/DFSDM1_DATIN0` |
-| Dual-microphone stereo | Revision required | Move PDM data to `PB12/DFSDM1_DATIN1`, then validate paired DFSDM channels |
-| PCB synchronization | Blocked | USB-detect parts are not synchronized from schematic to PCB |
-| PCB layout | Blocked | DRC, ground plane, power routing, USB routing, and SWD access need review |
+| PDM routing | Updated, unvalidated | PDM data is on `PB12/DFSDM1_DATIN1`; PB1 is NC |
+| Dual-microphone stereo | Firmware/bench validation required | Use Channel 1 direct plus redirected Channel 0 on opposite edges |
+| Netlist reconciliation | Blocked | Schematic and PCB each contain 50 parts, but strict DRC still reports one netlist mismatch |
+| PCB layout | Blocked | 58 clearance errors, ground plane, power routing, USB routing, and SWD access need review |
 | Firmware | Not included | The repository currently provides a firmware design guide, not an implementation |
 | Manufacturing | Not ready | Do not generate or order production files from this revision |
 
@@ -151,13 +151,13 @@ must be measured on the assembled device.
 
 ## Bring-Up Roadmap
 
-- [ ] Resolve the PDM input assignment and synchronize schematic and PCB.
+- [ ] Reconcile the remaining DRC netlist mismatch and re-export the synchronized netlist.
 - [ ] Clear electrical and manufacturing DRC violations.
 - [ ] Add a continuous ground plane and review converter, power, USB, and microSD routing.
 - [ ] Add accessible SWDIO, SWCLK, NRST, 3V3, and GND recovery pads.
 - [ ] Validate all rails and charging behavior with current-limited bench power.
 - [ ] Capture one microphone to RAM, then verify mono files on multiple microSD cards.
-- [ ] Validate two-channel PDM only after the PB12 hardware revision.
+- [ ] Validate Channel 1 mono, then redirected Channel 0 and simultaneous two-channel PDM.
 - [ ] Implement power-fail file closure, battery thresholds, RTC synchronization, and USB export.
 - [ ] Measure 24-hour energy use, thermal behavior, acoustic mechanics, and real speech intelligibility.
 
