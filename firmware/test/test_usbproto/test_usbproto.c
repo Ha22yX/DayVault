@@ -68,6 +68,19 @@ void test_oversize_line_unknown(void)
     TEST_ASSERT_EQUAL_UINT(USBPROTO_UNKNOWN, r);
 }
 
+void test_oversize_tail_cannot_parse_command(void)
+{
+    usbproto_msg_t m;
+    char line[80];
+    size_t i;
+    memset(line, 'X', 64);
+    strcpy(line + 64, "TIME\n");
+    usbproto_result_t r = USBPROTO_NEED_MORE;
+    for (i = 0; line[i]; i++)
+        r = usbproto_feed(&p, (uint8_t)line[i], &m);
+    TEST_ASSERT_EQUAL_UINT(USBPROTO_UNKNOWN, r);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -76,5 +89,6 @@ int main(void)
     RUN_TEST(test_unknown_command);
     RUN_TEST(test_partial_line_needs_more);
     RUN_TEST(test_oversize_line_unknown);
+    RUN_TEST(test_oversize_tail_cannot_parse_command);
     return UNITY_END();
 }

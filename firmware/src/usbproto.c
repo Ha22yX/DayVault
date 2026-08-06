@@ -50,6 +50,7 @@ usbproto_result_t usbproto_feed(usbproto_parser_t *p, uint8_t byte, usbproto_msg
     }
     if (p->len >= USBPROTO_LINE_MAX - 1)
     {
+        /* sentinel: discard rest of oversized line so trailing bytes cannot mask a valid command */
         p->len = USBPROTO_LINE_MAX;
         return USBPROTO_UNKNOWN;
     }
