@@ -55,7 +55,6 @@ static uint16_t read_vrefint(void)
 uint16_t hw_adc_read_battery_mv(void)
 {
     uint32_t sum_raw = 0;
-    uint32_t sum_vref = 0;
     uint32_t i;
     uint16_t vref_std = 0;
 

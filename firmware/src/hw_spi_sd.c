@@ -16,13 +16,6 @@ static uint8_t spi_txrx(uint8_t b)
 static void cs_high(void) { HAL_GPIO_WritePin(PIN_SD_CS_PORT, PIN_SD_CS, GPIO_PIN_SET); }
 static void cs_low(void)  { HAL_GPIO_WritePin(PIN_SD_CS_PORT, PIN_SD_CS, GPIO_PIN_RESET); }
 
-static void sd_spi_slow(void)
-{
-    /* SPI v1 (L4 CR1-based) BR field; BR=n -> prescaler 2^(n+1) */
-    hspi1.Instance->CR1 &= ~SPI_CR1_BR;
-    hspi1.Instance->CR1 |= SPI_CR1_BR_1;   /* /8 = 6 MHz at 48 MHz */
-}
-
 static void sd_spi_fast(void)
 {
     hspi1.Instance->CR1 &= ~SPI_CR1_BR;   /* /2 = 24 MHz */

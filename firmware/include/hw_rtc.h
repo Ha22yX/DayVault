@@ -4,8 +4,7 @@
 #include "timeutil.h"
 #include <stdint.h>
 
-struct __RTC_HandleTypeDef;
-struct __RTC_HandleTypeDef *hw_rtc_handle(void);
+void *hw_rtc_handle(void);
 
 int hw_rtc_init(void);
 int hw_rtc_set_time(const utc_time_t *t);

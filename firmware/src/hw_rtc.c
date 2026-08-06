@@ -4,7 +4,7 @@
 
 static RTC_HandleTypeDef hrtc;
 
-struct __RTC_HandleTypeDef *hw_rtc_handle(void)
+void *hw_rtc_handle(void)
 {
     return &hrtc;
 }
