@@ -4,6 +4,11 @@
 
 static RTC_HandleTypeDef hrtc;
 
+struct __RTC_HandleTypeDef *hw_rtc_handle(void)
+{
+    return &hrtc;
+}
+
 static uint8_t to_bcd(uint8_t v) { return (uint8_t)((v / 10) << 4) | (v % 10); }
 static uint8_t from_bcd(uint8_t v) { return (uint8_t)((v >> 4) * 10 + (v & 0x0F)); }
 
