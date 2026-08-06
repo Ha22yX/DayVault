@@ -44,8 +44,10 @@ static void SystemClock_Config(void)
     if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
         Error_Handler();
 
-    /* USB FS 48 MHz from PLLSAI1 Q (N=12, Q=2 on shared 8 MHz MSI). L452 has
-       no HSI48; PLLQ cannot reach 48 MHz with an 80 MHz PLLR (Q must be even). */
+    /* USB FS 48 MHz from PLLSAI1 Q (N=12, Q=2 on shared 8 MHz MSI). L4 main PLL
+       Q is even-only (2,4,6,8), so it cannot yield 48 MHz alongside an 80 MHz
+       PLLR (80R = 48Q -> odd Q); PLLSAI1Q used instead (L452 HSI48 exists but
+       is left uncalibrated/CRS-unused). */
     PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB;
     PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_PLLSAI1;
     PeriphClkInit.PLLSAI1.PLLSAI1Source = RCC_PLLSOURCE_MSI;

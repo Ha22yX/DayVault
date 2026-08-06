@@ -30,7 +30,9 @@ int hw_rtc_init(void)
     HAL_PWR_DisableWakeUpPin(PWR_WAKEUP_PIN3);
     HAL_PWR_DisableWakeUpPin(PWR_WAKEUP_PIN4);
     HAL_PWR_DisableWakeUpPin(PWR_WAKEUP_PIN5);
-    /* combined mask sets reserved bit 31 of PWR_SCR; clear flags separately */
+    /* combined WU|SB (0x3F) makes __HAL_PWR_CLEAR_FLAG write 1U<<31 (reserved
+       bit of PWR_SCR), clearing nothing; each flag alone selects CSBF (bit 8) /
+       the CWUF bits, so clear them separately */
     __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
     __HAL_PWR_CLEAR_FLAG(PWR_FLAG_SB);
 

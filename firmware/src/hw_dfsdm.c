@@ -40,11 +40,13 @@ void hw_dfsdm_init(void)
 
     /* Brief: OutputClock.Activation=ENABLE, OutputClock.Selection=DFSDM_CLOCKOUT_DIV2.
        L4 HAL: Selection is DFSDM_CHANNEL_OUTPUT_CLOCK_SYSTEM/AUDIO and the divider is
-       a separate OutputClock.Divider field (2..256). Placeholder, tuned on board. */
+       a separate OutputClock.Divider field (2..256). CKOUT = DFSDM kernel clock
+       (PCLK2 = 80 MHz) / Divider; 80/39 = 2.051 MHz, nearest to PDM_CKOUT_HZ
+       (2.048 MHz; 40 -> 2.0 MHz is farther). Filter OSF 128 -> 16.025 kHz. */
     hdfsdm_channel.Instance = DFSDM1_Channel1;
     hdfsdm_channel.Init.OutputClock.Activation = ENABLE;
     hdfsdm_channel.Init.OutputClock.Selection = DFSDM_CHANNEL_OUTPUT_CLOCK_SYSTEM;
-    hdfsdm_channel.Init.OutputClock.Divider = 2;
+    hdfsdm_channel.Init.OutputClock.Divider = 39;
     /* Brief: Input.Multiplexer=DFSDM_INPUT_EXTERNAL -> DFSDM_CHANNEL_EXTERNAL_INPUTS.
        Brief: Input.Pins=DFSDM_DATA_ON_PIN1 -> DFSDM_CHANNEL_SAME_CHANNEL_PINS (DATIN1 on ch1). */
     hdfsdm_channel.Init.Input.Multiplexer = DFSDM_CHANNEL_EXTERNAL_INPUTS;

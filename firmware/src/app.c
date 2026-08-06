@@ -35,6 +35,7 @@ static uint32_t last_bat_tick = 0;
 static uint32_t last_sync_tick = 0;
 static uint8_t seg_open = 0;
 static int sd_mounted = 0;
+static uint8_t df_running = 0;
 
 static const wav_config_t wav_cfg =
 {
@@ -47,6 +48,24 @@ static const wav_config_t wav_cfg =
 };
 
 static void close_segment(void);
+
+static void dfsdm_start(void)
+{
+    if (!df_running)
+    {
+        hw_dfsdm_start();
+        df_running = 1;
+    }
+}
+
+static void dfsdm_stop(void)
+{
+    if (df_running)
+    {
+        hw_dfsdm_stop();
+        df_running = 0;
+    }
+}
 
 static void on_audio_samples(const int16_t *samples, uint16_t count)
 {
@@ -67,6 +86,7 @@ static void on_transition(pstate_t from, pstate_t to, pevent_t evt)
     switch (to)
     {
     case PSTATE_IDLE:
+        dfsdm_stop();
         close_segment();
         if (sd_mounted)
         {
@@ -74,8 +94,12 @@ static void on_transition(pstate_t from, pstate_t to, pevent_t evt)
             sd_mounted = 0;
         }
         break;
+    case PSTATE_RECORDING:
+    case PSTATE_RECORDING_LOW:
+        dfsdm_start();
+        break;
     case PSTATE_STOPPING:
-        hw_dfsdm_stop();
+        dfsdm_stop();
         break;
     case PSTATE_STANDBY:
         close_segment();
@@ -178,6 +202,15 @@ static void open_segment(void)
     {
         wav_build_header(sd_buf, &wav_cfg, 0);
         f_write(&file, sd_buf, (UINT)wav_header_size(&wav_cfg), &wr);
+        /* preallocate SEGMENT_PREALLOC_BYTES so the full segment is contiguous
+           on the card; seek to end, write one zero sector, rewind past header */
+        if (f_lseek(&file, SEGMENT_PREALLOC_BYTES - 512u) == FR_OK)
+        {
+            memset(sd_buf, 0, 512);
+            f_write(&file, sd_buf, 512, &wr);
+        }
+        f_lseek(&file, (FSIZE_t)wav_header_size(&wav_cfg));
+        wav_build_header(sd_buf, &wav_cfg, 0);
         seg_open = 1;
     }
 }
@@ -188,7 +221,7 @@ static void close_segment(void)
     uint32_t data_bytes;
     if (!seg_open)
         return;
-    data_bytes = (uint32_t)f_size(&file) - (uint32_t)wav_header_size(&wav_cfg);
+    data_bytes = (uint32_t)f_tell(&file) - (uint32_t)wav_header_size(&wav_cfg);
     wav_patch_sizes(sd_buf, &wav_cfg, data_bytes);
     f_lseek(&file, 0);
     f_write(&file, sd_buf, (UINT)wav_header_size(&wav_cfg), &wr);
@@ -261,7 +294,7 @@ void app_run(void)
                 drain_audio();
 
                 /* periodic WAV header sync (10 s) */
-                if (now_tick - last_sync_tick >= WAV_SYNC_INTERVAL_MS)
+                if (seg_open && now_tick - last_sync_tick >= WAV_SYNC_INTERVAL_MS)
                 {
                     f_sync(&file);
                     last_sync_tick = now_tick;

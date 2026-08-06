@@ -32,8 +32,9 @@
 #define PDM_HALF_SAMPLES  1024u
 #define PDM_RING_BYTES    (PDM_HALF_SAMPLES * 2u * 8u)
 
-/* Low power */
-#define STANDBY_WAKE_SEC  30u
+/* Low power. RTC wake must fire before the 10 s IWDG window so the RTC
+   (not an IWDG reset) is the Standby wake mechanism. */
+#define STANDBY_WAKE_SEC  8u
 
 /* RTC backup register indices */
 #define BKP_IDX_MAGIC   1u
