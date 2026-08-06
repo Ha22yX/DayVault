@@ -4,8 +4,7 @@
 #include "timeutil.h"
 #include <stdint.h>
 
-void *hw_rtc_handle(void);
-
+int hw_rtc_set_wakeup_seconds(uint16_t seconds);
 int hw_rtc_init(void);
 int hw_rtc_set_time(const utc_time_t *t);
 int hw_rtc_get_time(utc_time_t *t);

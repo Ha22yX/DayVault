@@ -4,9 +4,9 @@
 
 static RTC_HandleTypeDef hrtc;
 
-void *hw_rtc_handle(void)
+int hw_rtc_set_wakeup_seconds(uint16_t seconds)
 {
-    return &hrtc;
+    return HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, seconds, RTC_WAKEUPCLOCK_CK_SPRE_16BITS) == HAL_OK;
 }
 
 static uint8_t to_bcd(uint8_t v) { return (uint8_t)((v / 10) << 4) | (v % 10); }

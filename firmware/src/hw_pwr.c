@@ -5,8 +5,7 @@
 
 void hw_pwr_set_wake_period(uint32_t seconds)
 {
-    RTC_HandleTypeDef *hrtc = hw_rtc_handle();
-    HAL_RTCEx_SetWakeUpTimer_IT(hrtc, seconds, RTC_WAKEUPCLOCK_CK_SPRE_16BITS);
+    hw_rtc_set_wakeup_seconds((uint16_t)seconds);
     HAL_NVIC_SetPriority(RTC_WKUP_IRQn, 3, 0);
     HAL_NVIC_EnableIRQ(RTC_WKUP_IRQn);
 }
