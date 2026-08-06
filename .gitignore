@@ -13,6 +13,7 @@ Thumbs.db
 build/
 Debug/
 Release/
+.pio/
 *.elf
 *.hex
 *.bin

@@ -1,0 +1,43 @@
+{
+  "build": {
+    "core": "stm32",
+    "cpu": "cortex-m4",
+    "extra_flags": "-DSTM32L4 -DSTM32L452xx",
+    "f_cpu": "80000000L",
+    "mcu": "stm32l452rct6",
+    "product_line": "STM32L452xx",
+    "variant": "STM32L4xx/L452RC(I-T-Y)_L452RE(I-T-Y)x(P)_L462RE(I-T-Y)"
+  },
+  "connectivity": [
+    "can"
+  ],
+  "debug": {
+    "default_tools": [
+      "stlink"
+    ],
+    "jlink_device": "STM32L452RC",
+    "openocd_board": "st_nucleo_l4",
+    "openocd_target": "stm32l4x",
+    "svd_path": "STM32L4x2.svd"
+  },
+  "frameworks": [
+    "stm32cube"
+  ],
+  "name": "DayVault (STM32L452RCT6)",
+  "upload": {
+    "maximum_ram_size": 163840,
+    "maximum_size": 262144,
+    "protocol": "stlink",
+    "protocols": [
+      "stlink",
+      "jlink",
+      "cmsis-dap",
+      "blackmagic",
+      "dfu",
+      "serial",
+      "custom"
+    ]
+  },
+  "url": "https://github.com/Ha22yX/DayVault",
+  "vendor": "DayVault"
+}
