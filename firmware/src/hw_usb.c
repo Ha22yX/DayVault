@@ -163,10 +163,11 @@ void USBD_LL_Delay(uint32_t delay)
 
 void *USBD_static_malloc(uint32_t size)
 {
-    /* Non-freeing bump allocator. Sized to hold both class handles
-       (CDC ~84 B + MSC BOT ~600 B) simultaneously, plus margin.
+    /* Non-freeing bump allocator. Must hold both class handles simultaneously:
+       USBD_CDC_HandleTypeDef ~552 B (data[512]) + USBD_MSC_BOT_HandleTypeDef
+       ~664 B (bot_data[512]) = ~1216 B. Pool of 1408 B leaves ~192 B headroom.
        uint32_t base keeps every allocation 4-byte aligned. */
-    static uint32_t mem[256];   /* 1024 bytes */
+    static uint32_t mem[352];   /* 1408 bytes */
     static uint32_t used = 0U;
     uint32_t n = (size + 3U) & ~3U;
     if ((used + n) > sizeof(mem))
