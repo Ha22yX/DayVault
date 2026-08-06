@@ -18,15 +18,14 @@ static void cs_low(void)  { HAL_GPIO_WritePin(PIN_SD_CS_PORT, PIN_SD_CS, GPIO_PI
 
 static void sd_spi_slow(void)
 {
-    /* SPI v1 (L4 CR1-based) BR field; SPI_CFG1_MBR is SPI v2 only */
-    hspi1.Instance->CR1 &= ~(SPI_CR1_BR_2 | SPI_CR1_BR_1 | SPI_CR1_BR_0);
-    hspi1.Instance->CR1 |= SPI_CR1_BR_2;   /* /8 = 6 MHz at 48 MHz */
+    /* SPI v1 (L4 CR1-based) BR field; BR=n -> prescaler 2^(n+1) */
+    hspi1.Instance->CR1 &= ~SPI_CR1_BR;
+    hspi1.Instance->CR1 |= SPI_CR1_BR_1;   /* /8 = 6 MHz at 48 MHz */
 }
 
 static void sd_spi_fast(void)
 {
-    hspi1.Instance->CR1 &= ~(SPI_CR1_BR_2 | SPI_CR1_BR_1 | SPI_CR1_BR_0);
-    hspi1.Instance->CR1 |= SPI_CR1_BR_0;   /* /2 = 24 MHz */
+    hspi1.Instance->CR1 &= ~SPI_CR1_BR;   /* /2 = 24 MHz */
 }
 
 static int sd_cmd(uint8_t cmd, uint32_t arg, uint8_t crc, uint8_t *resp, uint32_t tries)
