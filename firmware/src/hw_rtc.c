@@ -22,7 +22,6 @@ int hw_rtc_init(void)
 {
     RCC_OscInitTypeDef osc = {0};
     RCC_PeriphCLKInitTypeDef periph = {0};
-    uint32_t fwmask = PWR_FLAG_WU;
 
     __HAL_RCC_PWR_CLK_ENABLE();
     HAL_PWR_EnableBkUpAccess();
@@ -31,9 +30,9 @@ int hw_rtc_init(void)
     HAL_PWR_DisableWakeUpPin(PWR_WAKEUP_PIN3);
     HAL_PWR_DisableWakeUpPin(PWR_WAKEUP_PIN4);
     HAL_PWR_DisableWakeUpPin(PWR_WAKEUP_PIN5);
-    fwmask |= PWR_FLAG_SB;
-
-    __HAL_PWR_CLEAR_FLAG(fwmask);
+    /* combined mask sets reserved bit 31 of PWR_SCR; clear flags separately */
+    __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
+    __HAL_PWR_CLEAR_FLAG(PWR_FLAG_SB);
 
     osc.OscillatorType = RCC_OSCILLATORTYPE_LSE;
     osc.LSEState = RCC_LSE_ON;
@@ -64,7 +63,7 @@ int hw_rtc_set_time(const utc_time_t *t)
 {
     RTC_DateTypeDef d;
     RTC_TimeTypeDef ti;
-    d.Year = (uint8_t)(t->year % 100);
+    d.Year = to_bcd((uint8_t)(t->year % 100));
     d.Month = to_bcd(t->month);
     d.Date = to_bcd(t->day);
     d.WeekDay = 1;
@@ -87,7 +86,7 @@ int hw_rtc_get_time(utc_time_t *t)
     RTC_TimeTypeDef ti;
     HAL_RTC_GetTime(&hrtc, &ti, RTC_FORMAT_BCD);
     HAL_RTC_GetDate(&hrtc, &d, RTC_FORMAT_BCD);
-    t->year = 2000u + d.Year;
+    t->year = 2000u + from_bcd(d.Year);
     t->month = from_bcd(d.Month);
     t->day = from_bcd(d.Date);
     t->hour = from_bcd(ti.Hours);

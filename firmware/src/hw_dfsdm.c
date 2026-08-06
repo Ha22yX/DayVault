@@ -130,6 +130,8 @@ uint32_t hw_dfsdm_overruns(void)
 void HAL_DFSDM_FilterRegConvHalfCpltCallback(DFSDM_Filter_HandleTypeDef *hdfsdm)
 {
     (void)hdfsdm;
+    if (app_cb)
+        app_cb(pcm_buf[current_buf], PDM_HALF_SAMPLES);
     full_flag[current_buf] = 1;
     current_buf = (current_buf + 1) % 2;
 }
@@ -137,6 +139,8 @@ void HAL_DFSDM_FilterRegConvHalfCpltCallback(DFSDM_Filter_HandleTypeDef *hdfsdm)
 void HAL_DFSDM_FilterRegConvCpltCallback(DFSDM_Filter_HandleTypeDef *hdfsdm)
 {
     (void)hdfsdm;
+    if (app_cb)
+        app_cb(pcm_buf[current_buf], PDM_HALF_SAMPLES);
     full_flag[current_buf] = 1;
     current_buf = (current_buf + 1) % 2;
 }
