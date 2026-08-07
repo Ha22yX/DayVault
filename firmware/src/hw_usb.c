@@ -2,8 +2,10 @@
 #include "usbd_def.h"
 #include "usbd_core.h"
 #include "usbd_cdc.h"
+#include "usbd_msc.h"
 #include "usbd_desc.h"
 #include "usbd_cdc_if.h"
+#include "usbd_msc_storage.h"
 #include "hw_usb.h"
 #include "dayvault_config.h"
 #include <string.h>
@@ -60,6 +62,26 @@ void hw_usb_init(void)
 
     HAL_PWREx_EnableVddUSB();
 
+    USBD_Init(&hUsbDevice, &DayVault_Desc, 0);
+    USBD_RegisterClass(&hUsbDevice, &USBD_CDC);
+    USBD_CDC_RegisterInterface(&hUsbDevice, &usbd_cdc_if_fops);
+    USBD_Start(&hUsbDevice);
+}
+
+void hw_usb_enter_msc(void)
+{
+    USBD_Stop(&hUsbDevice);
+    USBD_DeInit(&hUsbDevice);
+    USBD_Init(&hUsbDevice, &DayVault_Desc, 0);
+    USBD_RegisterClass(&hUsbDevice, &USBD_MSC);
+    USBD_MSC_RegisterStorage(&hUsbDevice, &usbd_msc_storage_fops);
+    USBD_Start(&hUsbDevice);
+}
+
+void hw_usb_exit_msc(void)
+{
+    USBD_Stop(&hUsbDevice);
+    USBD_DeInit(&hUsbDevice);
     USBD_Init(&hUsbDevice, &DayVault_Desc, 0);
     USBD_RegisterClass(&hUsbDevice, &USBD_CDC);
     USBD_CDC_RegisterInterface(&hUsbDevice, &usbd_cdc_if_fops);

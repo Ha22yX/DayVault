@@ -11,5 +11,7 @@ void hw_usb_deinit(void);
 void hw_usb_poll(void);
 void hw_usb_set_rx_line_callback(rx_line_cb cb);
 void cdc_rx_bytes(const uint8_t *data, size_t len);
+void hw_usb_enter_msc(void);
+void hw_usb_exit_msc(void);
 
 #endif
