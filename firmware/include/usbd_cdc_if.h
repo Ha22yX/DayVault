@@ -1,8 +1,8 @@
-#ifndef USBD_CDC_IF_H
-#define USBD_CDC_IF_H
+#ifndef DAYVAULT_USBD_CDC_IF_H
+#define DAYVAULT_USBD_CDC_IF_H
 
-#include "usbd_cdc.h"
+#include "usbd_def.h"
 
-extern USBD_CDC_ItfTypeDef usbd_cdc_if_fops;
+void usbd_cdc_if_register(USBD_HandleTypeDef *pdev);
 
 #endif

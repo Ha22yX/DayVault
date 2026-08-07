@@ -3,12 +3,20 @@
 
 #include "usbd_def.h"
 
-#define DEVICE_ID1    (0x1FFF7590U)
-#define DEVICE_ID2    (0x1FFF7594U)
-#define DEVICE_ID3    (0x1FFF7598U)
+/* STM32L452 unique device ID base (verify: 0x1FFF7590, NOT the 0x1FFF7A10
+   used by L496/L4A6 feature boards). */
+#define DEVICE_ID1 (0x1FFF7590U)
+#define DEVICE_ID2 (0x1FFF7594U)
+#define DEVICE_ID3 (0x1FFF7598U)
+#define USB_SIZ_STRING 64u
+#define USBD_VID 0x0483
+#define USBD_PID 0x5741
+#define USBD_LANGID_STRING 0x0409
+#define USBD_MANUFACTURER_STRING "DayVault"
+#define USBD_PRODUCT_STRING      "DayVault Recorder"
+#define USBD_CONFIGURATION_STRING "DayVault Config"
+#define USBD_INTERFACE_STRING    "DayVault CDC"
 
-#define USB_SIZ_STRING 64U
-
-extern USBD_DescriptorsTypeDef DayVault_Desc;
+extern USBD_DescriptorsTypeDef FS_Desc;
 
 #endif

@@ -37,7 +37,7 @@ static int8_t CDC_TransmitCplt(uint8_t *pbuf, uint32_t *Len, uint8_t epnum)
     return 0;
 }
 
-USBD_CDC_ItfTypeDef usbd_cdc_if_fops =
+static USBD_CDC_ItfTypeDef cdc_if =
 {
     CDC_Init,
     CDC_DeInit,
@@ -45,3 +45,8 @@ USBD_CDC_ItfTypeDef usbd_cdc_if_fops =
     CDC_Receive,
     CDC_TransmitCplt
 };
+
+void usbd_cdc_if_register(USBD_HandleTypeDef *pdev)
+{
+    USBD_CDC_RegisterInterface(pdev, &cdc_if);
+}

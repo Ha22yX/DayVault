@@ -1,89 +1,119 @@
 #include "usbd_desc.h"
-#include "usbd_def.h"
-#include "usbd_core.h"
-#include "stm32l4xx_hal.h"
+#include <string.h>
 #include <stdio.h>
 
-static uint8_t USBD_DeviceDesc[18] = {
-    0x12,                        /* bLength */
-    USB_DESC_TYPE_DEVICE,        /* bDescriptorType */
-    0x00, 0x02,                  /* bcdUSB 2.00 */
-    0x00,                        /* bDeviceClass: 0, class at interface level */
-    0x00,                        /* bDeviceSubClass */
-    0x00,                        /* bDeviceProtocol */
-    USB_MAX_EP0_SIZE,            /* bMaxPacketSize0 */
-    0x83, 0x04,                  /* idVendor (0x0483, ST) */
-    0x11, 0x00,                  /* idProduct (0x0011) */
-    0x00, 0x02,                  /* bcdDevice */
-    1,                           /* iManufacturer */
-    2,                           /* iProduct */
-    3,                           /* iSerialNumber */
-    0x01                         /* bNumConfigurations */
-};
+static uint8_t USBD_FS_DeviceDesc[USB_LEN_DEV_DESC];
+static uint8_t USBD_FS_StrDesc[USBD_MAX_STR_DESC_SIZ];
 
-static uint8_t *USBD_DeviceDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
+static void Get_SerialNum(void)
+{
+    uint32_t s1 = *(volatile uint32_t *)DEVICE_ID1;
+    uint32_t s2 = *(volatile uint32_t *)DEVICE_ID2;
+    uint32_t s3 = *(volatile uint32_t *)DEVICE_ID3;
+    char buf[25];
+    snprintf(buf, sizeof(buf), "%08lX%08lX%08lX",
+             (unsigned long)s1, (unsigned long)s2, (unsigned long)s3);
+    uint8_t *p = USBD_FS_StrDesc + 2;
+    uint8_t len = 0;
+    const char *c = buf;
+    while (*c && len < USBD_MAX_STR_DESC_SIZ - 3)
+    {
+        p[len++] = (uint8_t)*c;
+        p[len++] = 0;
+        c++;
+    }
+    USBD_FS_StrDesc[0] = (uint8_t)(len + 2);
+    USBD_FS_StrDesc[1] = USB_DESC_TYPE_STRING;
+}
+
+static uint8_t *USBD_FS_DeviceDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
 {
     (void)speed;
-    *length = sizeof(USBD_DeviceDesc);
-    return USBD_DeviceDesc;
+    memset(USBD_FS_DeviceDesc, 0, USB_LEN_DEV_DESC);
+    USBD_FS_DeviceDesc[0] = USB_LEN_DEV_DESC;
+    USBD_FS_DeviceDesc[1] = USB_DESC_TYPE_DEVICE;
+    USBD_FS_DeviceDesc[2] = 0x00; USBD_FS_DeviceDesc[3] = 0x02;
+    USBD_FS_DeviceDesc[4] = 0xEF; /* composite */
+    USBD_FS_DeviceDesc[5] = 0x02;
+    USBD_FS_DeviceDesc[6] = 0x01;
+    USBD_FS_DeviceDesc[7] = USB_MAX_EP0_SIZE;
+    USBD_FS_DeviceDesc[8] = (uint8_t)USBD_VID;
+    USBD_FS_DeviceDesc[9] = (uint8_t)(USBD_VID >> 8);
+    USBD_FS_DeviceDesc[10] = (uint8_t)USBD_PID;
+    USBD_FS_DeviceDesc[11] = (uint8_t)(USBD_PID >> 8);
+    USBD_FS_DeviceDesc[12] = 0x00;
+    USBD_FS_DeviceDesc[13] = 0x02;
+    USBD_FS_DeviceDesc[14] = 0x01;   /* iManufacturer: index 1 */
+    USBD_FS_DeviceDesc[15] = 0x02;   /* iProduct: index 2 */
+    USBD_FS_DeviceDesc[16] = 0x03;   /* iSerialNumber: index 3 */
+    USBD_FS_DeviceDesc[17] = 0x01;   /* bNumConfigurations */
+    *length = USB_LEN_DEV_DESC;
+    return USBD_FS_DeviceDesc;
 }
 
-static uint8_t *USBD_LangIDStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
+static uint8_t *USBD_FS_LangIDStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
 {
-    static uint8_t langid[4] = { 4, USB_DESC_TYPE_STRING, 0x09, 0x04 };
     (void)speed;
-    *length = sizeof(langid);
-    return langid;
+    USBD_FS_StrDesc[0] = 4;
+    USBD_FS_StrDesc[1] = USB_DESC_TYPE_STRING;
+    USBD_FS_StrDesc[2] = (uint8_t)USBD_LANGID_STRING;
+    USBD_FS_StrDesc[3] = (uint8_t)(USBD_LANGID_STRING >> 8);
+    *length = 4;
+    return USBD_FS_StrDesc;
 }
 
-static uint8_t *USBD_ManufacturerStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
+static uint8_t *USBD_FS_StrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length, const char *str)
 {
-    static uint8_t str[USB_SIZ_STRING];
     (void)speed;
-    USBD_GetString((uint8_t *)"DayVault", str, length);
-    return str;
+    uint8_t len = 0;
+    uint8_t *p = USBD_FS_StrDesc + 2;
+    while (*str && len < USBD_MAX_STR_DESC_SIZ - 3)
+    {
+        p[len++] = (uint8_t)*str;
+        p[len++] = 0;
+        str++;
+    }
+    USBD_FS_StrDesc[0] = (uint8_t)(len + 2);
+    USBD_FS_StrDesc[1] = USB_DESC_TYPE_STRING;
+    *length = len + 2;
+    return USBD_FS_StrDesc;
 }
 
-static uint8_t *USBD_ProductStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
+static uint8_t *USBD_FS_ManufacturerStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
 {
-    static uint8_t str[USB_SIZ_STRING];
+    return USBD_FS_StrDescriptor(speed, length, USBD_MANUFACTURER_STRING);
+}
+
+static uint8_t *USBD_FS_ProductStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
+{
+    return USBD_FS_StrDescriptor(speed, length, USBD_PRODUCT_STRING);
+}
+
+static uint8_t *USBD_FS_SerialStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
+{
     (void)speed;
-    USBD_GetString((uint8_t *)"DayVault Recorder", str, length);
-    return str;
+    Get_SerialNum();
+    *length = USBD_FS_StrDesc[0];
+    return USBD_FS_StrDesc;
 }
 
-static uint8_t *USBD_SerialStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
+static uint8_t *USBD_FS_ConfigStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
 {
-    static uint8_t str[USB_SIZ_STRING];
-    uint8_t hex[25];
-    (void)speed;
-    (void)snprintf((char *)hex, sizeof(hex), "%08lx%08lx%08lx",
-                   (unsigned long)HAL_GetUIDw0(),
-                   (unsigned long)HAL_GetUIDw1(),
-                   (unsigned long)HAL_GetUIDw2());
-    USBD_GetString(hex, str, length);
-    return str;
+    return USBD_FS_StrDescriptor(speed, length, USBD_CONFIGURATION_STRING);
 }
 
-static uint8_t *USBD_ConfigStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
+static uint8_t *USBD_FS_InterfaceStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
 {
-    (void)speed; (void)length;
-    return 0;
+    return USBD_FS_StrDescriptor(speed, length, USBD_INTERFACE_STRING);
 }
 
-static uint8_t *USBD_InterfaceStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
+USBD_DescriptorsTypeDef FS_Desc =
 {
-    (void)speed; (void)length;
-    return 0;
-}
-
-USBD_DescriptorsTypeDef DayVault_Desc =
-{
-    USBD_DeviceDescriptor,
-    USBD_LangIDStrDescriptor,
-    USBD_ManufacturerStrDescriptor,
-    USBD_ProductStrDescriptor,
-    USBD_SerialStrDescriptor,
-    USBD_ConfigStrDescriptor,
-    USBD_InterfaceStrDescriptor
+    USBD_FS_DeviceDescriptor,
+    USBD_FS_LangIDStrDescriptor,
+    USBD_FS_ManufacturerStrDescriptor,
+    USBD_FS_ProductStrDescriptor,
+    USBD_FS_SerialStrDescriptor,
+    USBD_FS_ConfigStrDescriptor,
+    USBD_FS_InterfaceStrDescriptor
 };

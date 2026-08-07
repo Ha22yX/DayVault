@@ -1,6 +1,6 @@
 #include "stm32l4xx_hal.h"
-#include "usbd_def.h"
 #include "usbd_core.h"
+#include "usbd_composite_builder.h"
 #include "usbd_cdc.h"
 #include "usbd_msc.h"
 #include "usbd_desc.h"
@@ -17,7 +17,18 @@ static rx_line_cb rx_cb = 0;
 static char line_buf[USB_CDC_RX_LINE_MAX];
 static size_t line_len = 0;
 
-#define USBD_MEM_POOL_SIZE 1024U
+/* Endpoint address arrays consumed by the composite builder. Order matters:
+   slot 0 must be the IN bulk endpoint, slot 1 the OUT bulk endpoint,
+   slot 2 (CDC only) the IN interrupt (command) endpoint. */
+static uint8_t cdc_ep_addr[3] = { 0x81U, 0x01U, 0x82U };
+static uint8_t msc_ep_addr[2] = { 0x83U, 0x03U };
+
+/* Non-freeing bump allocator that resets to zero on the first free, so the
+   pool is reused across runtime re-init (CDC <-> MSC switch). Must hold both
+   class handles simultaneously:
+     USBD_CDC_HandleTypeDef ~552 B (data[512]) + USBD_MSC_BOT_HandleTypeDef
+     ~664 B (bot_data[512]) = ~1216 B. 1408 B pool leaves ~192 B headroom. */
+#define USBD_MEM_POOL_SIZE 1408U
 static uint32_t usbd_mem_pool[USBD_MEM_POOL_SIZE / 4U];
 static uint32_t usbd_mem_offset = 0U;
 
@@ -44,6 +55,31 @@ void hw_usb_set_rx_line_callback(rx_line_cb cb)
     rx_cb = cb;
 }
 
+static void usb_composite_start(void)
+{
+    USBD_StatusTypeDef ret;
+
+    ret = USBD_Init(&hUsbDevice, &FS_Desc, DEVICE_FS);
+    if (ret != USBD_OK)
+        return;
+
+    /* Composite builder keeps a static conf-desc buffer/size that survives
+       DeInit; reset it so a runtime re-init (attach/detach switch) rebuilds
+       the configuration descriptor from scratch instead of appending. */
+    USBD_CMPST_ClearConfDesc(&hUsbDevice);
+
+    USBD_RegisterClass(&hUsbDevice, &USBD_CMPSIT);
+    hUsbDevice.tclasslist[0].EpAdd = cdc_ep_addr;
+    USBD_CMPSIT_AddClass(&hUsbDevice, &USBD_CDC, CLASS_TYPE_CDC, 0);
+    usbd_cdc_if_register(&hUsbDevice);
+    hUsbDevice.classId++;
+    hUsbDevice.NumClasses++;
+    hUsbDevice.tclasslist[1].EpAdd = msc_ep_addr;
+    USBD_CMPSIT_AddClass(&hUsbDevice, &USBD_MSC, CLASS_TYPE_MSC, 0);
+    USBD_MSC_RegisterStorage(&hUsbDevice, &USBD_STORAGE_fops);
+    USBD_Start(&hUsbDevice);
+}
+
 void hw_usb_init(void)
 {
     GPIO_InitTypeDef g = {0};
@@ -62,36 +98,27 @@ void hw_usb_init(void)
 
     HAL_PWREx_EnableVddUSB();
 
-    USBD_Init(&hUsbDevice, &DayVault_Desc, DEVICE_FS);
-    USBD_RegisterClass(&hUsbDevice, &USBD_CDC);
-    USBD_CDC_RegisterInterface(&hUsbDevice, &usbd_cdc_if_fops);
-    USBD_Start(&hUsbDevice);
+    usb_composite_start();
+}
+
+void hw_usb_deinit(void)
+{
+    USBD_Stop(&hUsbDevice);
+    USBD_DeInit(&hUsbDevice);
 }
 
 void hw_usb_enter_msc(void)
 {
     USBD_Stop(&hUsbDevice);
     USBD_DeInit(&hUsbDevice);
-    USBD_Init(&hUsbDevice, &DayVault_Desc, DEVICE_FS);
-    USBD_RegisterClass(&hUsbDevice, &USBD_MSC);
-    USBD_MSC_RegisterStorage(&hUsbDevice, &usbd_msc_storage_fops);
-    USBD_Start(&hUsbDevice);
+    usb_composite_start();
 }
 
 void hw_usb_exit_msc(void)
 {
     USBD_Stop(&hUsbDevice);
     USBD_DeInit(&hUsbDevice);
-    USBD_Init(&hUsbDevice, &DayVault_Desc, DEVICE_FS);
-    USBD_RegisterClass(&hUsbDevice, &USBD_CDC);
-    USBD_CDC_RegisterInterface(&hUsbDevice, &usbd_cdc_if_fops);
-    USBD_Start(&hUsbDevice);
-}
-
-void hw_usb_deinit(void)
-{
-    HAL_PCD_DeInit(&hpcd);
-    HAL_PCD_MspDeInit(&hpcd);
+    usb_composite_start();
 }
 
 void hw_usb_poll(void)
@@ -151,6 +178,7 @@ void HAL_PCD_DataInStageCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum)
 
 void HAL_PCD_ResetCallback(PCD_HandleTypeDef *hpcd)
 {
+    USBD_LL_SetSpeed((USBD_HandleTypeDef *)hpcd->pData, USBD_SPEED_FULL);
     USBD_LL_Reset((USBD_HandleTypeDef *)hpcd->pData);
 }
 
