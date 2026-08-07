@@ -9,6 +9,7 @@ int main(void)
 {
     HAL_Init();
     SystemClock_Config();
+    app_init();
     hw_usb_init();
     app_run();
 }

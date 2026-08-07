@@ -65,6 +65,12 @@ void hw_usb_init(void)
     USBD_Start(&hUsbDevice);
 }
 
+void hw_usb_deinit(void)
+{
+    HAL_PCD_DeInit(&hpcd);
+    HAL_PCD_MspDeInit(&hpcd);
+}
+
 void hw_usb_poll(void)
 {
     /* PCD IRQ is handled by HAL_PCD_IRQHandler from the USB_IRQHandler;
