@@ -60,6 +60,13 @@ int hw_sd_init(void)
     __HAL_RCC_GPIOA_CLK_ENABLE();
 
     GPIO_InitTypeDef g = {0};
+    g.Pin = PIN_SD_CS;
+    g.Mode = GPIO_MODE_OUTPUT_PP;
+    g.Pull = GPIO_NOPULL;
+    g.Speed = GPIO_SPEED_FREQ_MEDIUM;
+    HAL_GPIO_Init(GPIOA, &g);
+    HAL_GPIO_WritePin(PIN_SD_CS_PORT, PIN_SD_CS, GPIO_PIN_SET);
+
     g.Pin = PIN_SD_SCK | PIN_SD_MOSI;
     g.Mode = GPIO_MODE_AF_PP;
     g.Pull = GPIO_NOPULL;
@@ -126,8 +133,15 @@ int hw_sd_init(void)
         uint8_t csd[16];
         if (sd_cmd(9, 0, 0x01, &r, 10))
         {
+            for (i = 0; i < 64; i++)
+            {
+                r = spi_txrx(0xFF);
+                if (r == 0xFE)
+                    break;
+            }
             for (i = 0; i < 16; i++)
                 csd[i] = spi_txrx(0xFF);
+            spi_txrx(0xFF);
             spi_txrx(0xFF);
             sd_end();
             if ((csd[0] >> 6) == 1)
