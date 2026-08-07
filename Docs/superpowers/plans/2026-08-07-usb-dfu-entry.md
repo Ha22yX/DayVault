@@ -1090,8 +1090,11 @@ build_flags =
     -std=gnu99
     -DUSBD_ACTIVATE_CDC=1
 build_src_filter =
+    +<*>
     -<test/*>
 ```
+
+Note: `build_src_filter` REPLACES the default include-everything filter. A bare `-<test/*>` would compile nothing and fail the link with `undefined reference to 'main'`. The correct form is `+<*> -<test/*>` (include all `src/` sources, exclude the test dir).
 
 - [ ] **Step 5: Update `firmware/src/main.c`** call order
 
