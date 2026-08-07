@@ -25,4 +25,11 @@
 #define PDM_HALF_SAMPLES     1024u
 #define PDM_RING_BYTES       (PDM_HALF_SAMPLES * 2u * 2u * 8u)
 
+#define AUDIO_SAMPLE_RATE 16000u
+#define AUDIO_CHANNELS    2u
+#define AUDIO_BITS        16u
+#define REC_DIR_STR       "REC"
+#define REC_EXT_STR       "WAV"
+#define REC_SEQ_MAX       999u
+
 #endif
