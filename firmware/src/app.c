@@ -13,8 +13,8 @@ static void on_rx_line(const char *line, size_t len)
     for (i = 0; i < len; i++)
     {
         usbproto_event_t evt = usbproto_feed(&proto, (uint8_t)line[i]);
-        if (evt != USBPROTO_EVT_NONE)
-            pending_evt = evt;
+        if (evt == USBPROTO_EVT_DFU)
+            pending_evt = USBPROTO_EVT_DFU;
     }
 }
 

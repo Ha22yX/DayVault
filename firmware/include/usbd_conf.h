@@ -5,7 +5,7 @@
 #include <string.h>
 #include "stm32l4xx.h"
 
-#define USBD_MAX_NUM_INTERFACES  1U
+#define USBD_MAX_NUM_INTERFACES  2U
 #define USBD_MAX_NUM_CONFIGURATION 1U
 #define USBD_MAX_STR_DESC_SZ    64U
 #define USBD_SELF_POWERED       1U
@@ -13,9 +13,6 @@
 
 #define USBD_CDC_INTERFACE_STR_ID 0U
 #define USBD_CDC_CLASS_TEMPLATE_ID 0U
-
-/* PCD FIFO / buffer config */
-#define PCD_PMA_BUFFER_SIZE      512U
 
 /* Memory management macros */
 #define USBD_malloc         (void *)USBD_static_malloc

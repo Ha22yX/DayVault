@@ -8,7 +8,7 @@ static uint8_t USBD_DeviceDesc[18] = {
     0x12,                        /* bLength */
     USB_DESC_TYPE_DEVICE,        /* bDescriptorType */
     0x00, 0x02,                  /* bcdUSB 2.00 */
-    0x02,                        /* bDeviceClass: CDC */
+    0x00,                        /* bDeviceClass: 0, class at interface level */
     0x00,                        /* bDeviceSubClass */
     0x00,                        /* bDeviceProtocol */
     USB_MAX_EP0_SIZE,            /* bMaxPacketSize0 */
