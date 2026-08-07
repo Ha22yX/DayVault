@@ -146,7 +146,7 @@ void test_stereo_header_golden_bytes(void)
         'R','I','F','F',  0x24,0,0,0,
         'W','A','V','E',
         'f','m','t',' ',  0x10,0,0,0,
-        0x01,0, 0x02,0, 0x00,0x3E,0,0, 0x00,0xFA,0,0, 0x04,0, 0x10,0,
+        0x01,0, 0x02,0, 0x80,0x3E,0,0, 0x00,0xFA,0,0, 0x04,0, 0x10,0,
         'd','a','t','a',  0,0,0,0
     };
     wav_build_header(hdr, &cfg, 0);
