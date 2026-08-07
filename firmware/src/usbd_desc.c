@@ -12,7 +12,7 @@ static uint8_t USBD_DeviceDesc[18] = {
     0x00,                        /* bDeviceSubClass */
     0x00,                        /* bDeviceProtocol */
     USB_MAX_EP0_SIZE,            /* bMaxPacketSize0 */
-    0x83, 0x00,                  /* idVendor (0x0083) */
+    0x83, 0x04,                  /* idVendor (0x0483, ST) */
     0x11, 0x00,                  /* idProduct (0x0011) */
     0x00, 0x02,                  /* bcdDevice */
     1,                           /* iManufacturer */

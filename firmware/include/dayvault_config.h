@@ -13,6 +13,12 @@
 #define PIN_SD_MISO      GPIO_PIN_6
 #define PIN_SD_MOSI      GPIO_PIN_7
 
+/* BOOT0 pin (PH3) as GPIO input for software DFU trigger: when high at
+   startup (BOOT button held), jump to the ROM bootloader regardless of
+   nBOOT1/BOOT0 boot configuration. */
+#define PIN_DFU_TRIGGER       GPIO_PIN_3
+#define PIN_DFU_TRIGGER_PORT  GPIOH
+
 #define USB_CDC_RX_LINE_MAX  64u
 
 #define PIN_PDM_CLK          GPIO_PIN_2

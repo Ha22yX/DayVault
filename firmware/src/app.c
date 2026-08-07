@@ -226,6 +226,20 @@ void app_init(void)
 {
     GPIO_InitTypeDef g = {0};
 
+    /* Software DFU trigger: if BOOT0 pin (PH3) is high at startup (BOOT
+       button held), jump to the ROM system bootloader directly — no BOOT0
+       boot-config dependency. */
+    __HAL_RCC_GPIOH_CLK_ENABLE();
+    g.Pin = PIN_DFU_TRIGGER;
+    g.Mode = GPIO_MODE_INPUT;
+    g.Pull = GPIO_PULLDOWN;
+    HAL_GPIO_Init(PIN_DFU_TRIGGER_PORT, &g);
+    if (HAL_GPIO_ReadPin(PIN_DFU_TRIGGER_PORT, PIN_DFU_TRIGGER) == GPIO_PIN_SET)
+    {
+        static const dfu_stop_hooks_t hooks = { 0, 0, 0 };
+        dfu_enter_with_hooks(&hooks);
+    }
+
     __HAL_RCC_GPIOA_CLK_ENABLE();
     g.Pin = PIN_USB_DETECT;
     g.Mode = GPIO_MODE_INPUT;
