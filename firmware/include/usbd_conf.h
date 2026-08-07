@@ -11,6 +11,14 @@
 #define USBD_SELF_POWERED       1U
 #define USBD_DEBUG_LEVEL        0U
 
+/* Low level core index used by USBD_Init */
+#define DEVICE_FS 0U
+
+/* PCD low-level config (match the verified feature/firmware USB stack) */
+#define PCD_SOFTEND_MODE        0u
+#define USB_EXT_LD_ENABLE       0u
+#define USB_EXT_LD_INVERT       0u
+
 #define USBD_CDC_INTERFACE_STR_ID 0U
 #define USBD_CDC_CLASS_TEMPLATE_ID 0U
 

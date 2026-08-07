@@ -62,7 +62,7 @@ void hw_usb_init(void)
 
     HAL_PWREx_EnableVddUSB();
 
-    USBD_Init(&hUsbDevice, &DayVault_Desc, 0);
+    USBD_Init(&hUsbDevice, &DayVault_Desc, DEVICE_FS);
     USBD_RegisterClass(&hUsbDevice, &USBD_CDC);
     USBD_CDC_RegisterInterface(&hUsbDevice, &usbd_cdc_if_fops);
     USBD_Start(&hUsbDevice);
@@ -72,7 +72,7 @@ void hw_usb_enter_msc(void)
 {
     USBD_Stop(&hUsbDevice);
     USBD_DeInit(&hUsbDevice);
-    USBD_Init(&hUsbDevice, &DayVault_Desc, 0);
+    USBD_Init(&hUsbDevice, &DayVault_Desc, DEVICE_FS);
     USBD_RegisterClass(&hUsbDevice, &USBD_MSC);
     USBD_MSC_RegisterStorage(&hUsbDevice, &usbd_msc_storage_fops);
     USBD_Start(&hUsbDevice);
@@ -82,7 +82,7 @@ void hw_usb_exit_msc(void)
 {
     USBD_Stop(&hUsbDevice);
     USBD_DeInit(&hUsbDevice);
-    USBD_Init(&hUsbDevice, &DayVault_Desc, 0);
+    USBD_Init(&hUsbDevice, &DayVault_Desc, DEVICE_FS);
     USBD_RegisterClass(&hUsbDevice, &USBD_CDC);
     USBD_CDC_RegisterInterface(&hUsbDevice, &usbd_cdc_if_fops);
     USBD_Start(&hUsbDevice);
@@ -190,6 +190,11 @@ void HAL_PCD_DisconnectCallback(PCD_HandleTypeDef *hpcd)
 }
 
 /* USBD low-level driver -> HAL PCD */
+void USBD_LL_Delay(uint32_t delay)
+{
+    HAL_Delay(delay);
+}
+
 USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev)
 {
     hpcd.pData = pdev;
