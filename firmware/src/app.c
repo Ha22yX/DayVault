@@ -23,6 +23,8 @@ static uint8_t audio_buf[PDM_RING_BYTES];
 static wav_config_t wav_cfg;
 static uint32_t seq = 1;
 static uint8_t file_open = 0;
+static uint8_t recording_failed;
+static char sd_path[4];
 
 static usbproto_t proto;
 static volatile usbproto_event_t pending_evt = USBPROTO_EVT_NONE;
@@ -50,14 +52,14 @@ static void dfsdm_stop(void) { hw_dfsdm_stop(); }
 
 static void fs_mount_ok(void)
 {
-    FATFS_LinkDriverEx(&Diskio_SD_Driver, "SD:", 0);
+    FATFS_LinkDriverEx(&Diskio_SD_Driver, sd_path, 0);
     f_mount(&fs, "SD:", 1);
 }
 
 static void fs_unmount(void)
 {
     f_mount(NULL, "SD:", 0);
-    FATFS_UnLinkDriver("SD:");
+    FATFS_UnLinkDriver(sd_path);
 }
 
 static void finalize_wav(void)
@@ -74,12 +76,19 @@ static void finalize_wav(void)
         got &= ~3u;   /* 4-byte stereo frame alignment */
         if (got == 0)
             break;
-        f_write(&file, block, got, &wr);
+        if (f_write(&file, block, got, &wr) != FR_OK || wr != got)
+        {
+            recording_failed = 1;
+            break;
+        }
     }
-    data_bytes = (uint32_t)f_tell(&file) - 44u;
-    wav_patch_sizes(hdr, &wav_cfg, data_bytes);
-    f_lseek(&file, 0);
-    f_write(&file, hdr, 44, &wr);
+    if (!recording_failed)
+    {
+        data_bytes = (uint32_t)f_tell(&file) - 44u;
+        wav_patch_sizes(hdr, &wav_cfg, data_bytes);
+        f_lseek(&file, 0);
+        f_write(&file, hdr, 44, &wr);
+    }
     f_sync(&file);
     f_close(&file);
     file_open = 0;
@@ -141,9 +150,11 @@ static void open_next_file(void)
     {
         uint8_t hdr[44];
         wav_build_header(hdr, &wav_cfg, 0);
-        f_write(&file, hdr, 44, &wr);
-        file_open = 1;
+        if (f_write(&file, hdr, 44, &wr) == FR_OK && wr == 44u)
+            file_open = 1;
     }
+    if (!file_open)
+        recording_failed = 1;
     seq++;
     if (seq > REC_SEQ_MAX)
         seq = 1;
@@ -158,7 +169,10 @@ static void pump_audio(void)
     got = (UINT)ringbuf_read(&audio_rb, block, sizeof(block));
     got &= ~3u;   /* 4-byte stereo frame alignment */
     if (got)
-        f_write(&file, block, got, &wr);
+    {
+        if (f_write(&file, block, got, &wr) != FR_OK || wr != got)
+            recording_failed = 1;
+    }
 }
 
 static const rec_actions_t rec_actions = {
@@ -241,7 +255,8 @@ void app_init(void)
     boot_attached = (usb_level == GPIO_PIN_SET);
     if (!boot_attached)
     {
-        open_next_file();
+        if (!recording_failed)
+            open_next_file();
         rec_mgr_event(&rec, REC_EVT_USB_DETACH);
     }
 }
@@ -269,9 +284,12 @@ void app_run(void)
         switch (rec_mgr_state(&rec))
         {
         case REC_RECORDING:
-            if (!file_open)
-                open_next_file();
-            pump_audio();
+            if (!recording_failed)
+            {
+                if (!file_open)
+                    open_next_file();
+                pump_audio();
+            }
             break;
 
         case REC_STOPPING:
