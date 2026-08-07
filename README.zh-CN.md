@@ -125,11 +125,11 @@ DayVault/
 |   |-- 01-Hardware-Overview.md 系统架构与电源域
 |   |-- 02-MCU-Pinout.md        面向固件的完整引脚关系
 |   |-- 03-Component-Pinout.md  主要器件连接关系
-|   |-- 04-Firmware-Guide.md    CubeMX 与固件行为建议
 |   |-- 05-Bringup-and-Test.md  安全上电与验证流程
 |   |-- 06-Known-Issues.md      阻塞项、限制与必要修改
 |   |-- 07-BOM.md               器件和无源元件参数
-|   `-- 08-Net-Map.md           按网络整理的端点关系
+|   |-- 08-Net-Map.md           按网络整理的端点关系
+|   `-- 09-USB-DFU-Entry-Design.md  USB DFU 自动进入设计
 |-- CONTRIBUTING.md
 |-- README.md
 `-- README.zh-CN.md

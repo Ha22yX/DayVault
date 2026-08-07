@@ -130,11 +130,11 @@ DayVault/
 |   |-- 01-Hardware-Overview.md Architecture and power domains
 |   |-- 02-MCU-Pinout.md        Complete firmware-facing pin assignment
 |   |-- 03-Component-Pinout.md  Major component connections
-|   |-- 04-Firmware-Guide.md    CubeMX and firmware behavior
 |   |-- 05-Bringup-and-Test.md  Safe first-power validation sequence
 |   |-- 06-Known-Issues.md      Blockers, limitations, and required revisions
 |   |-- 07-BOM.md               Parts and passive values
-|   `-- 08-Net-Map.md           Net-centric endpoint map
+|   |-- 08-Net-Map.md           Net-centric endpoint map
+|   `-- 09-USB-DFU-Entry-Design.md  Software-triggered USB DFU auto-entry
 |-- CONTRIBUTING.md
 |-- README.md
 `-- README.zh-CN.md

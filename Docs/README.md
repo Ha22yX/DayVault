@@ -10,11 +10,11 @@ is `../EDA/DayVault.eprj2`.
 2. [01-Hardware-Overview.md](01-Hardware-Overview.md) - architecture and power domains.
 3. [02-MCU-Pinout.md](02-MCU-Pinout.md) - complete STM32L452RCT6 64-pin assignment.
 4. [03-Component-Pinout.md](03-Component-Pinout.md) - every major component connection.
-5. [04-Firmware-Guide.md](04-Firmware-Guide.md) - CubeMX and firmware behavior.
-6. [05-Bringup-and-Test.md](05-Bringup-and-Test.md) - safe first-power and validation sequence.
-7. [06-Known-Issues.md](06-Known-Issues.md) - blockers and design limitations.
-8. [07-BOM.md](07-BOM.md) - primary parts and passive values.
-9. [08-Net-Map.md](08-Net-Map.md) - net-centric endpoint map for debugging and review.
+5. [05-Bringup-and-Test.md](05-Bringup-and-Test.md) - safe first-power and validation sequence.
+6. [06-Known-Issues.md](06-Known-Issues.md) - blockers and design limitations.
+7. [07-BOM.md](07-BOM.md) - primary parts and passive values.
+8. [08-Net-Map.md](08-Net-Map.md) - net-centric endpoint map for debugging and review.
+9. [09-USB-DFU-Entry-Design.md](09-USB-DFU-Entry-Design.md) - software-triggered USB DFU auto-entry design.
 
 ## Documentation rules
 
