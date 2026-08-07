@@ -15,4 +15,14 @@
 
 #define USB_CDC_RX_LINE_MAX  64u
 
+#define PIN_PDM_CLK          GPIO_PIN_2
+#define PIN_PDM_CLK_PORT     GPIOC
+#define PIN_PDM_DATA         GPIO_PIN_12
+#define PIN_PDM_DATA_PORT    GPIOB
+#define PDM_CKOUT_HZ         2048000u
+#define PDM_CKOUT_DIVIDER    39u
+#define PDM_OSR              128u
+#define PDM_HALF_SAMPLES     1024u
+#define PDM_RING_BYTES       (PDM_HALF_SAMPLES * 2u * 2u * 8u)
+
 #endif
