@@ -62,6 +62,23 @@ void test_oversize_line_discards_to_newline(void)
     TEST_ASSERT_EQUAL_UINT(USBPROTO_EVT_DFU, usbproto_poll(&p));
 }
 
+void test_discard_newline_resets_for_next_line(void)
+{
+    uint8_t i;
+    for (i = 0; i < 70; i++)
+        usbproto_feed(&p, 'X');
+    usbproto_feed(&p, '\n');
+    feed_line(&p, "DFU\n");
+    TEST_ASSERT_EQUAL_UINT(USBPROTO_EVT_DFU, usbproto_poll(&p));
+}
+
+void test_poll_read_and_clear(void)
+{
+    feed_line(&p, "DFU\n");
+    TEST_ASSERT_EQUAL_UINT(USBPROTO_EVT_DFU, usbproto_poll(&p));
+    TEST_ASSERT_EQUAL_UINT(USBPROTO_EVT_NONE, usbproto_poll(&p));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -71,5 +88,7 @@ int main(void)
     RUN_TEST(test_empty_line_returns_none);
     RUN_TEST(test_partial_line_returns_none);
     RUN_TEST(test_oversize_line_discards_to_newline);
+    RUN_TEST(test_discard_newline_resets_for_next_line);
+    RUN_TEST(test_poll_read_and_clear);
     return UNITY_END();
 }

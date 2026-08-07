@@ -13,7 +13,7 @@ usbproto_event_t usbproto_feed(usbproto_t *p, uint8_t byte)
     if (p->discard)
     {
         if (byte == '\n')
-            p->discard = 0;
+            usbproto_init(p);
         return USBPROTO_EVT_NONE;
     }
 
@@ -42,5 +42,7 @@ usbproto_event_t usbproto_feed(usbproto_t *p, uint8_t byte)
 
 usbproto_event_t usbproto_poll(usbproto_t *p)
 {
-    return p->last_evt;
+    usbproto_event_t evt = p->last_evt;
+    p->last_evt = USBPROTO_EVT_NONE;
+    return evt;
 }
