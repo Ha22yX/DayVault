@@ -358,7 +358,7 @@ void test_wraparound(void)
 {
     uint8_t in[12];
     uint8_t out[4];
-    uint8_t expected[4] = {9, 10, 11, 12};
+    uint8_t expected[4] = {4, 5, 6, 7};
     uint8_t i;
     for (i = 0; i < 12; i++)
         in[i] = i;
