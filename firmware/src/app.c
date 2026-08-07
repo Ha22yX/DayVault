@@ -31,6 +31,7 @@ static GPIO_PinState usb_level;
 static uint8_t usb_armed;
 static GPIO_PinState usb_pend_level;
 static uint32_t usb_pend_tick;
+static uint8_t boot_attached;
 
 static void on_rx_line(const char *line, size_t len)
 {
@@ -210,7 +211,6 @@ static void usb_detect_poll(void)
 void app_init(void)
 {
     GPIO_InitTypeDef g = {0};
-    GPIO_PinState detected;
 
     __HAL_RCC_GPIOA_CLK_ENABLE();
     g.Pin = PIN_USB_DETECT;
@@ -237,16 +237,12 @@ void app_init(void)
     fs_mount_ok();
     seq = scan_sequence();
 
-    detected = HAL_GPIO_ReadPin(GPIOA, PIN_USB_DETECT);
-    if (detected == GPIO_PIN_RESET)
+    usb_level = HAL_GPIO_ReadPin(GPIOA, PIN_USB_DETECT);
+    boot_attached = (usb_level == GPIO_PIN_SET);
+    if (!boot_attached)
     {
         open_next_file();
         rec_mgr_event(&rec, REC_EVT_USB_DETACH);
-    }
-    else
-    {
-        rec_mgr_event(&rec, REC_EVT_USB_ATTACH);
-        rec_mgr_event(&rec, REC_EVT_FINALIZE_DONE);
     }
 }
 
@@ -256,8 +252,14 @@ void app_run(void)
         dfsdm_stop, finalize_wav, fs_unmount
     };
 
-    usb_level = HAL_GPIO_ReadPin(GPIOA, PIN_USB_DETECT);
     usb_armed = 0;
+
+    if (boot_attached)
+    {
+        boot_attached = 0;
+        rec_mgr_event(&rec, REC_EVT_USB_ATTACH);
+        rec_mgr_event(&rec, REC_EVT_FINALIZE_DONE);
+    }
 
     for (;;)
     {
