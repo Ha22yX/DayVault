@@ -4,7 +4,7 @@
 #include "dfu.h"
 
 static usbproto_t proto;
-static usbproto_event_t pending_evt = USBPROTO_EVT_NONE;
+static volatile usbproto_event_t pending_evt = USBPROTO_EVT_NONE;
 
 static void on_rx_line(const char *line, size_t len)
 {
