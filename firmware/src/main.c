@@ -20,6 +20,11 @@ static void SystemClock_Config(void)
     RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
     RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
+    /* L4 reset leaves the regulator in Range 2 (max 26 MHz). 80 MHz SYSCLK and
+       48 MHz USB require Range 1 — switch before configuring PLL. */
+    if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
+        Error_Handler();
+
     /* MSI 8 MHz -> PLL (M=1, N=20, R=2) -> 80 MHz SYSCLK, VCO 160 MHz.
        USB FS 48 MHz from PLLSAI1 Q (N=12, Q=2 on shared 8 MHz MSI). L4 main PLL
        Q is even-only (2,4,6,8) so it cannot yield 48 MHz alongside 80 MHz PLLR;
