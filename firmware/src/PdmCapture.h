@@ -13,6 +13,8 @@ int      pdm_try_read_sample(int16_t* out);
 uint32_t pdm_overruns(void);
 uint32_t pdm_sample_count(void);
 int      pdm_start_result(void);
+int      pdm_itst_start(void);
+int      pdm_isr_count_now(void);
 int      pdm_isr_count_now(void);
 
 #ifdef __cplusplus

@@ -374,7 +374,13 @@ void loop()
                             f_closedir(&dir);
                         }
                         Serial.println("LIST done");
-                    } else                     if (strncmp(line, "SAMP", 4) == 0) {
+                    } else                     if (strncmp(line, "ITST", 4) == 0) {
+                        pdm_itst_start();
+                        uint32_t e = millis() + 2000;
+                        while (millis() < e) { }
+                        Serial.print("ITST isr="); Serial.println(pdm_isr_count_now());
+                        pdm_stop();
+                    } else if (strncmp(line, "SAMP", 4) == 0) {
                         sample_stats();
                     } else if (strncmp(line, "DOWNLOAD ", 9) == 0) {
                         download_file(line + 9);

@@ -95,6 +95,22 @@ int pdm_try_read_sample(int16_t* out)
     return 0;
 }
 
+int pdm_itst_start(void)
+{
+    isr_count = 0;
+    HAL_NVIC_SetPriority(DFSDM1_FLT1_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(DFSDM1_FLT1_IRQn);
+    hf.Instance->FLTCR2 |= DFSDM_FLTCR2_REOCIE;
+    return 0;
+}
+
+int pdm_isr_count_now(void) { return (int)isr_count; }
+
+void DFSDM1_FLT1_IRQHandler(void)
+{
+    isr_count++;
+}
+
 uint32_t pdm_overruns(void) { return overruns; }
 uint32_t pdm_sample_count(void) { return samples; }
 int pdm_start_result(void) { return start_ret; }
