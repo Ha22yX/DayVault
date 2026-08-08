@@ -30,8 +30,12 @@ static int32_t hpf_x = 0;
 static const int32_t hpf_a = 31405;   /* Q15 alpha for ~150 Hz HPF at 21.7 kHz */
 
 static int32_t eq_x1 = 0, eq_x2 = 0, eq_y1 = 0, eq_y2 = 0;
-static const int32_t eq_b0 = 21191, eq_b1 = -17061, eq_b2 = 5220;   /* peaking 3 kHz +8 dB Q1 Q14 @21.7k */
-static const int32_t eq_a1 = -17061, eq_a2 = 10027;
+static const int32_t eq_b0 = 22644, eq_b1 = -17428, eq_b2 = 4334;   /* peaking 3 kHz +10 dB Q1 Q14 @21.7k */
+static const int32_t eq_a1 = -17428, eq_a2 = 10594;
+
+static int32_t eq2_x1 = 0, eq2_x2 = 0, eq2_y1 = 0, eq2_y2 = 0;
+static const int32_t eq2_b0 = 18556, eq2_b1 = -22741, eq2_b2 = 8625;  /* peaking 2 kHz +5 dB Q1 Q14 @21.7k */
+static const int32_t eq2_a1 = -22741, eq2_a2 = 10799;
 
 static int32_t sh_x1 = 0, sh_x2 = 0, sh_y1 = 0, sh_y2 = 0;
 static const int32_t sh_b0 = 15999, sh_b1 = -30696, sh_b2 = 14749;  /* low shelf 250 Hz -4 dB Q14 @21.7k */
@@ -191,6 +195,7 @@ void pdm_start(void)
     hpf_y = 0;
     hpf_x = 0;
     eq_x1 = 0; eq_x2 = 0; eq_y1 = 0; eq_y2 = 0;
+    eq2_x1 = 0; eq2_x2 = 0; eq2_y1 = 0; eq2_y2 = 0;
     sh_x1 = 0; sh_x2 = 0; sh_y1 = 0; sh_y2 = 0;
     agc_peak = 0;
     agc_gain = 1 << 16;
@@ -251,6 +256,11 @@ int pdm_dma_read(int16_t* buf, int max)
             sh_x2 = sh_x1; sh_x1 = x;
             sh_y2 = sh_y1; sh_y1 = (int32_t)sh;
             x = (int32_t)sh;
+            int64_t eq2 = ((int64_t)eq2_b0 * x + (int64_t)eq2_b1 * eq2_x1 + (int64_t)eq2_b2 * eq2_x2
+                           - (int64_t)eq2_a1 * eq2_y1 - (int64_t)eq2_a2 * eq2_y2) >> 14;
+            eq2_x2 = eq2_x1; eq2_x1 = x;
+            eq2_y2 = eq2_y1; eq2_y1 = (int32_t)eq2;
+            x = (int32_t)eq2;
             int64_t eq = ((int64_t)eq_b0 * x + (int64_t)eq_b1 * eq_x1 + (int64_t)eq_b2 * eq_x2
                           - (int64_t)eq_a1 * eq_y1 - (int64_t)eq_a2 * eq_y2) >> 14;
             eq_x2 = eq_x1; eq_x1 = x;
