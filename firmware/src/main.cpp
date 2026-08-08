@@ -56,6 +56,35 @@ void SystemClock_Config(void)
 static uint8_t audio_buf[PDM_RING_BYTES];
 static RingBuf audio_rb;
 
+static void check_wav_file(void)
+{
+    FIL f;
+    uint8_t hdr[44];
+    UINT rd = 0;
+    FRESULT r;
+
+    Serial.print("CHECK mount="); Serial.println(fs_mount_result());
+    if (f_open(&f, "/REC001.WAV", FA_READ) != FR_OK) {
+        Serial.println("CHECK open FAIL");
+        return;
+    }
+    r = f_read(&f, hdr, 44, &rd);
+    Serial.print("CHECK hdr_fr="); Serial.print((int)r);
+    Serial.print(" rd="); Serial.print(rd);
+    if (rd == 44) {
+        bool riff = (hdr[0]=='R'&&hdr[1]=='I'&&hdr[2]=='F'&&hdr[3]=='F'&&hdr[8]=='W'&&hdr[9]=='A'&&hdr[10]=='V'&&hdr[11]=='E');
+        uint32_t data_sz = (uint32_t)hdr[40] | ((uint32_t)hdr[41]<<8) | ((uint32_t)hdr[42]<<16) | ((uint32_t)hdr[43]<<24);
+        uint16_t ch = (uint16_t)(hdr[22] | (hdr[23]<<8));
+        uint32_t sr = (uint32_t)hdr[24] | ((uint32_t)hdr[25]<<8) | ((uint32_t)hdr[26]<<16) | ((uint32_t)hdr[27]<<24);
+        Serial.print(" riff="); Serial.print(riff ? "yes" : "NO");
+        Serial.print(" ch="); Serial.print(ch);
+        Serial.print(" sr="); Serial.print(sr);
+        Serial.print(" dataSz="); Serial.println(data_sz);
+    }
+    f_close(&f);
+    Serial.println("CHECK done");
+}
+
 static void record_test(int seconds)
 {
     WavConfig cfg;
@@ -170,7 +199,9 @@ void loop()
             if (c == '\n' || c == '\r') {
                 if (n > 0) {
                     line[n] = 0;
-                    if (strncmp(line, "CAPT", 4) == 0) {
+                    if (strncmp(line, "CHECK", 5) == 0) {
+                        check_wav_file();
+                    } else if (strncmp(line, "CAPT", 4) == 0) {
                         record_test(5);
                     } else if (strncmp(line, "DFU", 3) == 0) {
                         Serial.println("entering DFU...");
