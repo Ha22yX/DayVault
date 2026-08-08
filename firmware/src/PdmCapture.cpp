@@ -33,6 +33,10 @@ static int32_t eq_x1 = 0, eq_x2 = 0, eq_y1 = 0, eq_y2 = 0;
 static const int32_t eq_b0 = 21964, eq_b1 = -9898, eq_b2 = 3430;   /* peaking 3 kHz +8 dB Q1 Q14 @16.1k */
 static const int32_t eq_a1 = -9898, eq_a2 = 9008;
 
+static int32_t sh_x1 = 0, sh_x2 = 0, sh_y1 = 0, sh_y2 = 0;
+static const int32_t sh_b0 = 15870, sh_b1 = -30002, sh_b2 = 14223; /* low shelf 250 Hz -4 dB Q14 @16.1k */
+static const int32_t sh_a1 = -29937, sh_a2 = 13773;
+
 static uint32_t agc_peak = 0;
 static int32_t agc_gain = 1 << 16;                                /* Q16 unity */
 static const uint32_t agc_voice_floor = 700;                      /* pre-AGC peak: speech vs noise */
@@ -166,6 +170,7 @@ void pdm_start(void)
     hpf_y = 0;
     hpf_x = 0;
     eq_x1 = 0; eq_x2 = 0; eq_y1 = 0; eq_y2 = 0;
+    sh_x1 = 0; sh_x2 = 0; sh_y1 = 0; sh_y2 = 0;
     agc_peak = 0;
     agc_gain = 1 << 16;
 
@@ -220,6 +225,11 @@ int pdm_dma_read(int16_t* buf, int max)
             hpf_x = x;
             hpf_y = y;
             x = y;
+            int64_t sh = ((int64_t)sh_b0 * x + (int64_t)sh_b1 * sh_x1 + (int64_t)sh_b2 * sh_x2
+                          - (int64_t)sh_a1 * sh_y1 - (int64_t)sh_a2 * sh_y2) >> 14;
+            sh_x2 = sh_x1; sh_x1 = x;
+            sh_y2 = sh_y1; sh_y1 = (int32_t)sh;
+            x = (int32_t)sh;
             int64_t eq = ((int64_t)eq_b0 * x + (int64_t)eq_b1 * eq_x1 + (int64_t)eq_b2 * eq_x2
                           - (int64_t)eq_a1 * eq_y1 - (int64_t)eq_a2 * eq_y2) >> 14;
             eq_x2 = eq_x1; eq_x1 = x;
