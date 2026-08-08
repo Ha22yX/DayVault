@@ -1,5 +1,7 @@
 #include <Arduino.h>
 #include "stm32l4xx_hal.h"
+#include "Config.h"
+#include "SdCard.h"
 
 extern "C" void SystemClock_Config(void);
 
@@ -96,7 +98,16 @@ void loop()
                     } else if (strncmp(line, "INFO", 4) == 0) {
                         Serial.print("INFO usb_detect="); Serial.print(digitalRead(PIN_USB_DETECT));
                         Serial.print(" boot="); Serial.print(digitalRead(PIN_BOOT0));
-                        Serial.print(" up="); Serial.println(millis());
+                        Serial.print(" up="); Serial.print(millis());
+                        Serial.print(" sd=");
+                        if (sd_capacity_bytes() > 0) { Serial.print(sd_capacity_bytes()); Serial.print("B"); }
+                        else { Serial.print("none"); }
+                        Serial.println();
+                    } else if (strncmp(line, "SD", 2) == 0) {
+                        bool ok = sd_init();
+                        Serial.print("SD init="); Serial.print(ok ? "OK" : "FAIL");
+                        if (ok) { Serial.print(" cap="); Serial.print(sd_capacity_bytes()); Serial.println("B"); }
+                        else { Serial.println(); }
                     } else {
                         Serial.print("? "); Serial.println(line);
                     }
