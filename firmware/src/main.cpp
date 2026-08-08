@@ -481,19 +481,33 @@ void loop()
                         uint32_t e = millis() + 2000;
                         uint32_t cnt = 0;
                         uint32_t lo = 0xFFFFFFFF;
+                        int64_t ssum = 0, ssq = 0;
+                        int32_t mn = 32767, mx = -32768;
                         while (millis() < e) {
                             int16_t tmp[256];
                             int n = pdm_dma_read(tmp, 256);
                             cnt += (uint32_t)n;
+                            for (int i = 0; i < n; i++) {
+                                ssum += tmp[i];
+                                ssq += (int64_t)tmp[i] * tmp[i];
+                                if (tmp[i] < mn) mn = tmp[i];
+                                if (tmp[i] > mx) mx = tmp[i];
+                            }
                             if (n < lo) lo = (uint32_t)n;
                             if (millis() % 250 == 0) dbg_step_set(40);
                         }
                         dbg_step_set(50);
+                        uint32_t ch = 0;
+                        int32_t halv = (int32_t)(DFSDM1_Filter1->FLTRDATAR & 0xFFFFu);
+                        int32_t rms = (cnt > 0) ? (int32_t)sqrt((double)ssq / cnt) : 0;
                         Serial.print("DMAT cnt="); Serial.print(cnt);
-                        Serial.print(" rate="); Serial.print(cnt / 2u);
+                        Serial.print(" rms="); Serial.print(rms);
+                        Serial.print(" dc="); Serial.print((int32_t)(ssum / (cnt ? (int64_t)cnt : 1)));
+                        Serial.print(" mn="); Serial.print(mn); Serial.print(" mx="); Serial.print(mx);
+                        Serial.print(" hal="); Serial.print(halv);
                         Serial.print(" ndtr="); Serial.print(DMA1_Channel5->CNDTR);
                         Serial.print(" start="); Serial.print(pdm_start_result());
-                        Serial.print(" isr="); Serial.println(DFSDM1_Filter1->FLTISR, HEX);
+                        Serial.println();
                         pdm_stop();
                         dbg_step_set(0);
                     } else if (strncmp(line, "ITST", 4) == 0) {

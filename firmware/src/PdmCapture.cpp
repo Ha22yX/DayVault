@@ -64,7 +64,7 @@ void pdm_init(RingBuf* s)
 
     hf.Instance = DFSDM1_Filter1;
     hf.Init.RegularParam.Trigger = DFSDM_FILTER_SW_TRIGGER;
-    hf.Init.RegularParam.FastMode = ENABLE;
+    hf.Init.RegularParam.FastMode = DISABLE;
     hf.Init.RegularParam.DmaMode = ENABLE;
     hf.Init.InjectedParam.Trigger = DFSDM_FILTER_SW_TRIGGER;
     hf.Init.InjectedParam.ScanMode = DISABLE;
@@ -80,7 +80,7 @@ void pdm_init(RingBuf* s)
     pdm_dbg_step(11);
     DMA1_CSELR->CSELR &= ~DMA_CSELR_C5S;
     pdm_dbg_step(12);
-    PDM_DMA_CH->CPAR = (uint32_t)&DFSDM1_Filter1->FLTRDATAR;
+    PDM_DMA_CH->CPAR = (uint32_t)&DFSDM1_Filter1->FLTRDATAR + 2u;
     pdm_dbg_step(13);
     PDM_DMA_CH->CMAR = (uint32_t)pdm_dma_buf;
     pdm_dbg_step(14);
@@ -125,7 +125,10 @@ int pdm_dma_read(int16_t* buf, int max)
         uint32_t first = PDM_DMA_BUF_SAMPLES - pdm_dma_pos;
         if (take > first) take = first;
         for (uint32_t i = 0; i < take; i++) {
-            buf[n++] = pdm_dma_buf[(pdm_dma_pos + i) & (PDM_DMA_BUF_SAMPLES - 1u)];
+            int32_t v = ((int32_t)(int16_t)pdm_dma_buf[(pdm_dma_pos + i) & (PDM_DMA_BUF_SAMPLES - 1u)]) * (int32_t)PDM_GAIN;
+            if (v > 32767) v = 32767;
+            if (v < -32768) v = -32768;
+            buf[n++] = (int16_t)v;
         }
         pdm_dma_pos = (pdm_dma_pos + take) & (PDM_DMA_BUF_SAMPLES - 1u);
     }
