@@ -235,6 +235,7 @@ static bool rec_active = false;
 static uint32_t rec_data_bytes = 0;
 static uint32_t rec_seq = 1;
 static uint32_t rec_start_ms = 0;
+static uint32_t rec_discard = 0;
 static uint8_t rec_chunk[64];
 static size_t rec_chunk_len = 0;
 static int rec_err = 0;
@@ -263,12 +264,15 @@ static void rec_start(void)
     if (f_write(&rec_file, hdr, 44, &wr) != FR_OK || wr != 44) { rec_err = 3; f_close(&rec_file); fs_unmount(); return; }
     rec_data_bytes = 0;
     rec_chunk_len = 0;
+    rec_discard = 32;
     ringbuf_init(&audio_rb, audio_buf, sizeof(audio_buf));
     pdm_init(&audio_rb);
     pdm_start();
     rec_start_ms = millis();
     rec_active = true;
 }
+
+static int rec_read_sample(int16_t* s);
 
 static void rec_stop(void)
 {
@@ -277,7 +281,7 @@ static void rec_stop(void)
     uint8_t hdr[44];
     if (!rec_active) return;
     pdm_stop();
-    while (pdm_try_read_sample(&s)) {
+    while (rec_read_sample(&s)) {
         rec_chunk[rec_chunk_len++] = (uint8_t)s;
         rec_chunk[rec_chunk_len++] = (uint8_t)(s >> 8);
         if (rec_chunk_len == sizeof(rec_chunk)) rec_flush_chunk();
@@ -302,10 +306,20 @@ static void rec_stop(void)
     Serial.print(" rate="); Serial.println(rec_cfg.sample_rate);
 }
 
+static int rec_read_sample(int16_t* s)
+{
+    while (rec_discard > 0) {
+        int16_t tmp;
+        if (!pdm_try_read_sample(&tmp)) return 0;
+        rec_discard--;
+    }
+    return pdm_try_read_sample(s);
+}
+
 static void rec_poll_samples(void)
 {
     int16_t s;
-    while (pdm_try_read_sample(&s)) {
+    while (rec_read_sample(&s)) {
         rec_chunk[rec_chunk_len++] = (uint8_t)s;
         rec_chunk[rec_chunk_len++] = (uint8_t)(s >> 8);
         if (rec_chunk_len == sizeof(rec_chunk)) rec_flush_chunk();
@@ -478,14 +492,4 @@ void loop()
         }
     }
     if (rec_active) rec_poll_samples();
-
-    uint32_t now = millis();
-    if (now - last_tick >= 1000) {
-        last_tick = now;
-        if (Serial) {
-            Serial.print("tick usb_detect="); Serial.print(digitalRead(PIN_USB_DETECT));
-            Serial.print(" boot="); Serial.print(digitalRead(PIN_BOOT0));
-            Serial.print(" rec="); Serial.println(rec_active ? 1 : 0);
-        }
-    }
 }
