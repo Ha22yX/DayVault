@@ -10,6 +10,7 @@ extern "C" {
 bool fs_mount(void);
 int  fs_mount_result(void);
 void fs_unmount(void);
+uint32_t fs_next_sequence(void);
 int  fs_test_write(const char* path, const uint8_t* data, size_t n);
 
 #ifdef __cplusplus

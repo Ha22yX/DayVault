@@ -62,9 +62,17 @@ static void check_wav_file(void)
     uint8_t hdr[44];
     UINT rd = 0;
     FRESULT r;
+    char name[24];
+    uint32_t seq;
+    uint32_t newest;
 
     Serial.print("CHECK mount="); Serial.println(fs_mount_result());
-    if (f_open(&f, "/REC001.WAV", FA_READ) != FR_OK) {
+    seq = fs_next_sequence();
+    newest = (seq > 1) ? seq - 1 : 1;
+    snprintf(name, sizeof(name), "0:/%s%03u.%s", REC_DIR_STR, (unsigned)newest, REC_EXT_STR);
+
+    Serial.print("CHECK file="); Serial.println(name);
+    if (f_open(&f, name, FA_READ) != FR_OK) {
         Serial.println("CHECK open FAIL");
         return;
     }
@@ -172,6 +180,78 @@ static void dfu_enter(void)
     ((void (*)(void)) * (volatile uint32_t *)(SYSTEM_MEMORY_BASE + 4u))();
 }
 
+static WavConfig rec_cfg;
+static FIL rec_file;
+static bool rec_active = false;
+static uint32_t rec_data_bytes = 0;
+static uint32_t rec_seq = 1;
+static uint8_t rec_chunk[64];
+static size_t rec_chunk_len = 0;
+static int rec_err = 0;
+
+static void rec_flush_chunk(void)
+{
+    UINT wr = 0;
+    if (rec_chunk_len > 0) {
+        if (f_write(&rec_file, rec_chunk, (UINT)rec_chunk_len, &wr) == FR_OK) rec_data_bytes += wr;
+        rec_chunk_len = 0;
+    }
+}
+
+static void rec_start(void)
+{
+    char name[24];
+    UINT wr = 0;
+    uint8_t hdr[44];
+    if (rec_active) return;
+    rec_err = 0;
+    if (!fs_mount()) { rec_err = 1; return; }
+    rec_seq = fs_next_sequence();
+    snprintf(name, sizeof(name), "0:/%s%03u.%s", REC_DIR_STR, (unsigned)rec_seq, REC_EXT_STR);
+    if (f_open(&rec_file, name, FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) { rec_err = 2; fs_unmount(); return; }
+    wav_build_header(hdr, &rec_cfg, 0);
+    if (f_write(&rec_file, hdr, 44, &wr) != FR_OK || wr != 44) { rec_err = 3; f_close(&rec_file); fs_unmount(); return; }
+    rec_data_bytes = 0;
+    rec_chunk_len = 0;
+    ringbuf_init(&audio_rb, audio_buf, sizeof(audio_buf));
+    pdm_init(&audio_rb);
+    pdm_start();
+    rec_active = true;
+}
+
+static void rec_stop(void)
+{
+    int16_t s;
+    UINT wr = 0;
+    uint8_t hdr[44];
+    if (!rec_active) return;
+    pdm_stop();
+    while (pdm_try_read_sample(&s)) {
+        rec_chunk[rec_chunk_len++] = (uint8_t)s;
+        rec_chunk[rec_chunk_len++] = (uint8_t)(s >> 8);
+        if (rec_chunk_len == sizeof(rec_chunk)) rec_flush_chunk();
+    }
+    rec_flush_chunk();
+    wav_build_header(hdr, &rec_cfg, rec_data_bytes);
+    if (f_lseek(&rec_file, 0) == FR_OK) f_write(&rec_file, hdr, 44, &wr);
+    f_sync(&rec_file);
+    f_close(&rec_file);
+    fs_unmount();
+    rec_active = false;
+    Serial.print("AUTO stop err="); Serial.print(rec_err);
+    Serial.print(" bytes="); Serial.println(rec_data_bytes);
+}
+
+static void rec_poll_samples(void)
+{
+    int16_t s;
+    while (pdm_try_read_sample(&s)) {
+        rec_chunk[rec_chunk_len++] = (uint8_t)s;
+        rec_chunk[rec_chunk_len++] = (uint8_t)(s >> 8);
+        if (rec_chunk_len == sizeof(rec_chunk)) rec_flush_chunk();
+    }
+}
+
 void setup()
 {
     SystemClock_Config();
@@ -185,11 +265,19 @@ void setup()
     Serial.println("DV step2 ready");
     Serial.print("usb_detect="); Serial.print(digitalRead(PIN_USB_DETECT));
     Serial.print(" boot="); Serial.println(digitalRead(PIN_BOOT0));
+
+    rec_cfg.format = 1;
+    rec_cfg.sample_rate = AUDIO_SAMPLE_RATE;
+    rec_cfg.channels = AUDIO_CHANNELS;
+    rec_cfg.bits = AUDIO_BITS;
+    rec_cfg.block_align = (uint16_t)(AUDIO_CHANNELS * (AUDIO_BITS / 8u));
+    rec_cfg.byte_rate = rec_cfg.sample_rate * rec_cfg.block_align;
 }
 
 void loop()
 {
     static uint32_t last_tick = 0;
+    static int last_usb = -1;
 
     if (Serial.available()) {
         static char line[64];
@@ -199,7 +287,25 @@ void loop()
             if (c == '\n' || c == '\r') {
                 if (n > 0) {
                     line[n] = 0;
-                    if (strncmp(line, "CHECK", 5) == 0) {
+                    if (strncmp(line, "LIST", 4) == 0) {
+                        DIR dir; FILINFO fno;
+                        Serial.print("LIST mount="); Serial.println(fs_mount_result());
+                        if (f_opendir(&dir, "0:/") == FR_OK) {
+                            while (f_readdir(&dir, &fno) == FR_OK && fno.fname[0]) {
+                                if ((fno.fattrib & AM_DIR) == 0) {
+                                    Serial.print("  "); Serial.print(fno.fname);
+                                    Serial.print(" "); Serial.println((uint32_t)fno.fsize);
+                                }
+                            }
+                            f_closedir(&dir);
+                        }
+                        Serial.println("LIST done");
+                    } else                     if (strncmp(line, "REC", 3) == 0 && line[3] != ' ') {
+                        rec_start();
+                        Serial.print("REC started seq="); Serial.println(rec_seq);
+                    } else if (strncmp(line, "STOP", 4) == 0) {
+                        rec_stop();
+                    } else if (strncmp(line, "CHECK", 5) == 0) {
                         check_wav_file();
                     } else if (strncmp(line, "CAPT", 4) == 0) {
                         record_test(5);
@@ -293,12 +399,29 @@ void loop()
         }
     }
 
+    /* USB detect -> auto recording */
+    int usb = digitalRead(PIN_USB_DETECT);
+    if (last_usb < 0) {
+        last_usb = usb;
+        if (usb == LOW) rec_start();   /* booted with USB detached -> start recording */
+    }
+    if (usb != last_usb) {
+        last_usb = usb;
+        if (usb == LOW) {
+            rec_start();
+        } else {
+            rec_stop();
+        }
+    }
+    if (rec_active) rec_poll_samples();
+
     uint32_t now = millis();
     if (now - last_tick >= 1000) {
         last_tick = now;
         if (Serial) {
             Serial.print("tick usb_detect="); Serial.print(digitalRead(PIN_USB_DETECT));
-            Serial.print(" boot="); Serial.println(digitalRead(PIN_BOOT0));
+            Serial.print(" boot="); Serial.print(digitalRead(PIN_BOOT0));
+            Serial.print(" rec="); Serial.println(rec_active ? 1 : 0);
         }
     }
 }

@@ -1,5 +1,6 @@
 #include "Fs.h"
 #include "ff.h"
+#include "Config.h"
 #include <string.h>
 
 static FATFS fs;
@@ -18,6 +19,36 @@ int fs_mount_result(void)
 void fs_unmount(void)
 {
     f_mount(NULL, "0:", 0);
+}
+
+static uint32_t parse_num(const char* s)
+{
+    uint32_t n = 0;
+    while (*s >= '0' && *s <= '9') {
+        n = n * 10u + (uint32_t)(*s - '0');
+        if (n > REC_SEQ_MAX) n = REC_SEQ_MAX;
+        s++;
+    }
+    return n;
+}
+
+uint32_t fs_next_sequence(void)
+{
+    DIR dir;
+    FILINFO fno;
+    uint32_t max_num = 0;
+    if (f_opendir(&dir, "0:/") != FR_OK) return 1;
+    for (;;) {
+        if (f_readdir(&dir, &fno) != FR_OK || fno.fname[0] == 0) break;
+        if ((fno.fattrib & AM_DIR) != 0) continue;
+        if (strncmp(fno.fname, REC_DIR_STR, strlen(REC_DIR_STR)) != 0) continue;
+        char* dot = strrchr(fno.fname, '.');
+        if (dot == NULL || strcmp(dot + 1, REC_EXT_STR) != 0) continue;
+        uint32_t n = parse_num(fno.fname + strlen(REC_DIR_STR));
+        if (n > max_num) max_num = n;
+    }
+    f_closedir(&dir);
+    return (max_num >= REC_SEQ_MAX) ? 1 : max_num + 1;
 }
 
 /* Write data to a file, then read it back and verify. Returns:
