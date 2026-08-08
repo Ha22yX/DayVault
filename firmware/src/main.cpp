@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "stm32l4xx_hal.h"
 #include "Config.h"
+#include "UsbComposite.h"
 
 extern "C" void SystemClock_Config(void);
 
@@ -41,23 +42,33 @@ void SystemClock_Config(void)
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK) { while (1) { } }
 }
 
-static uint32_t last_blink = 0;
-static bool led_on = false;
+static uint32_t banner_until = 0;
 
 void setup()
 {
     SystemClock_Config();
+
+    __HAL_RCC_GPIOH_CLK_ENABLE();
+    GPIO_InitTypeDef boot_pin = {0};
+    boot_pin.Pin = GPIO_PIN_3;
+    boot_pin.Mode = GPIO_MODE_INPUT;
+    boot_pin.Pull = GPIO_PULLDOWN;
+    HAL_GPIO_Init(GPIOH, &boot_pin);
+
     pinMode(PIN_LED, OUTPUT);
     digitalWrite(PIN_LED, LOW);
     pinMode(PIN_USB_DETECT, INPUT);
+
+    usb_composite_init();
+    banner_until = millis() + 5000u;
+    cdc_printf("DV alive usb_detect=%d boot=%d\n", HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_9), HAL_GPIO_ReadPin(GPIOH, GPIO_PIN_3));
 }
 
 void loop()
 {
-    uint32_t now = millis();
-    if (now - last_blink >= 500) {
-        last_blink = now;
-        led_on = !led_on;
-        digitalWrite(PIN_LED, led_on ? HIGH : LOW);
+    usb_composite_poll();
+    if (millis() < banner_until) {
+        cdc_printf("DV alive usb_detect=%d boot=%d\n", HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_9), HAL_GPIO_ReadPin(GPIOH, GPIO_PIN_3));
     }
+    delay(100);
 }
