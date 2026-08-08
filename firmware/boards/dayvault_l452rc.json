@@ -6,8 +6,14 @@
     "f_cpu": "80000000L",
     "mcu": "stm32l452rct6",
     "product_line": "STM32L452xx",
+    "hwids": [
+      ["0x0483", "0x5741"]
+    ],
     "stm32cube": {
       "custom_config_header": "yes"
+    },
+    "arduino": {
+      "variant_h": "variant_generic.h"
     },
     "variant": "STM32L4xx/L452RC(I-T-Y)_L452RE(I-T-Y)x(P)_L462RE(I-T-Y)"
   },
@@ -18,7 +24,7 @@
     "openocd_target": "stm32l4x",
     "svd_path": "STM32L4x2.svd"
   },
-  "frameworks": ["cmsis", "stm32cube"],
+  "frameworks": ["arduino", "cmsis", "stm32cube"],
   "name": "DayVault L452RC",
   "upload": {
     "maximum_ram_size": 65536,
