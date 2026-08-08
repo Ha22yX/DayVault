@@ -5,9 +5,10 @@
 #define NR_N      256
 #define NR_HOP    128
 #define NR_NB     (NR_N / 2 + 1)
-#define NR_OVERS  2.0f
-#define NR_FLOOR  0.015f
+#define NR_OVERS  1.0f
+#define NR_FLOOR  0.06f
 #define NR_NOISE_A  0.4f
+#define NR_DD_SMOOTH 0.98f   /* decision-directed a-priori SNR smoothing */
 
 static float nr_hann[NR_N];
 static float nr_tw_re[NR_N / 2 + 1];
@@ -15,6 +16,8 @@ static float nr_tw_im[NR_N / 2 + 1];
 static float nr_in[NR_N];
 static float nr_noise[NR_NB];
 static float nr_ola[NR_N - NR_HOP];
+static float nr_g_prev[NR_NB];
+static float nr_gamma_prev[NR_NB];
 static int nr_tw_ok = 0;
 static int nr_nframes = 0;
 static float nr_noise_total = 0.0f;
@@ -79,6 +82,8 @@ void nr_init(void)
     memset(nr_in, 0, sizeof(nr_in));
     memset(nr_noise, 0, sizeof(nr_noise));
     memset(nr_ola, 0, sizeof(nr_ola));
+    memset(nr_g_prev, 0, sizeof(nr_g_prev));
+    memset(nr_gamma_prev, 0, sizeof(nr_gamma_prev));
     nr_nframes = 0;
     nr_noise_total = 0.0f;
 }
@@ -117,12 +122,18 @@ void nr_process(const int16_t* in, int16_t* out, int n)
 
     for (int k = 0; k < NR_NB; k++) {
         float p = re[k] * re[k] + im[k] * im[k];
-        float g = 1.0f - NR_OVERS * nr_noise[k] / (p + 1e-8f);
+        float gamma = p / (nr_noise[k] + 1e-8f);
+        float xi = NR_DD_SMOOTH * nr_g_prev[k] * nr_g_prev[k] * nr_gamma_prev[k]
+                   + (1.0f - NR_DD_SMOOTH) * (gamma > 1.0f ? gamma - 1.0f : 0.0f);
+        if (xi < 0.0f) xi = 0.0f;
+        float g = xi / (1.0f + xi);
         if (g < NR_FLOOR) g = NR_FLOOR;
         if (g > 1.0f) g = 1.0f;
-        if (k == 0 || k == NR_NB - 1) g = NR_FLOOR;   /* DC and Nyquist heavily gated */
+        if (k == 0 || k == NR_NB - 1) g = NR_FLOOR;
         re[k] *= g;
         im[k] *= g;
+        nr_g_prev[k] = g;
+        nr_gamma_prev[k] = gamma;
     }
 
     nr_ifft(re, im);
