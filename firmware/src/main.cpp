@@ -163,6 +163,26 @@ done:
     Serial.println(pdm_overruns());
 }
 
+static void download_file(const char* fname)
+{
+    FIL f;
+    uint8_t buf[512];
+    UINT rd = 0;
+    char path[32];
+
+    Serial.print("DL mount="); Serial.println(fs_mount_result());
+    snprintf(path, sizeof(path), "0:/%s", fname);
+    if (f_open(&f, path, FA_READ) != FR_OK) { Serial.println("DL open FAIL"); fs_unmount(); return; }
+    Serial.print("DLSTART ");
+    Serial.println((uint32_t)f_size(&f));
+    while (f_read(&f, buf, sizeof(buf), &rd) == FR_OK && rd > 0) {
+        Serial.write(buf, rd);
+    }
+    f_close(&f);
+    fs_unmount();
+    Serial.println("DLEND");
+}
+
 static void dfu_enter(void)
 {
     HAL_DeInit();
@@ -300,7 +320,9 @@ void loop()
                             f_closedir(&dir);
                         }
                         Serial.println("LIST done");
-                    } else                     if (strncmp(line, "REC", 3) == 0 && line[3] != ' ') {
+                    } else                     if (strncmp(line, "DOWNLOAD ", 9) == 0) {
+                        download_file(line + 9);
+                    } else if (strncmp(line, "REC", 3) == 0 && line[3] != ' ') {
                         rec_start();
                         Serial.print("REC started seq="); Serial.println(rec_seq);
                     } else if (strncmp(line, "STOP", 4) == 0) {
