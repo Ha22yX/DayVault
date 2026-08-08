@@ -19,6 +19,10 @@ static int16_t pdm_dma_buf[PDM_DMA_BUF_SAMPLES] __attribute__((aligned(4)));
 static volatile uint32_t pdm_dma_pos = 0;
 static volatile uint32_t pdm_dma_underruns = 0;
 
+static int32_t hpf_y = 0;
+static int32_t hpf_x = 0;
+static const int32_t hpf_a = 31513;   /* Q15 alpha for ~100 Hz HPF at 15.7 kHz */
+
 extern volatile uint32_t g_dbg_step;
 void pdm_dbg_step(uint32_t v) { g_dbg_step = v; }
 
@@ -92,6 +96,8 @@ void pdm_start(void)
     samples = 0;
     pdm_dma_pos = 0;
     pdm_dma_underruns = 0;
+    hpf_y = 0;
+    hpf_x = 0;
 
     DMA1_CSELR->CSELR &= ~DMA_CSELR_C5S;
     PDM_DMA_CH->CCR = 0;
@@ -125,10 +131,16 @@ int pdm_dma_read(int16_t* buf, int max)
         uint32_t first = PDM_DMA_BUF_SAMPLES - pdm_dma_pos;
         if (take > first) take = first;
         for (uint32_t i = 0; i < take; i++) {
-            int32_t v = ((int32_t)(int16_t)pdm_dma_buf[(pdm_dma_pos + i) & (PDM_DMA_BUF_SAMPLES - 1u)]) * (int32_t)PDM_GAIN;
-            if (v > 32767) v = 32767;
-            if (v < -32768) v = -32768;
-            buf[n++] = (int16_t)v;
+            int32_t x = ((int32_t)(int16_t)pdm_dma_buf[(pdm_dma_pos + i) & (PDM_DMA_BUF_SAMPLES - 1u)]) * (int32_t)PDM_GAIN;
+            if (x > 32767) x = 32767;
+            if (x < -32768) x = -32768;
+            int64_t acc = (int64_t)hpf_a * ((int64_t)hpf_y + x - hpf_x);
+            int32_t y = (int32_t)(acc >> 15);
+            if (y > 32767) y = 32767;
+            if (y < -32768) y = -32768;
+            hpf_x = x;
+            hpf_y = y;
+            buf[n++] = (int16_t)y;
         }
         pdm_dma_pos = (pdm_dma_pos + take) & (PDM_DMA_BUF_SAMPLES - 1u);
     }

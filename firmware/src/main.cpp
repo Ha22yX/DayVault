@@ -592,6 +592,9 @@ void loop()
                         Serial.print("INFO usb_detect="); Serial.print(digitalRead(PIN_USB_DETECT));
                         Serial.print(" boot="); Serial.print(digitalRead(PIN_BOOT0));
                         Serial.print(" up="); Serial.print(millis());
+                        Serial.print(" sysclk="); Serial.print(HAL_RCC_GetSysClockFreq());
+                        Serial.print(" ckin_div="); Serial.print((DFSDM1_Channel0->CHCFGR1 & DFSDM_CHCFGR1_CKOUTDIV) >> DFSDM_CHCFGR1_CKOUTDIV_Pos);
+                        Serial.print(" fltcr1="); Serial.print(DFSDM1_Filter1->FLTCR1, HEX);
                         Serial.print(" sd=");
                         if (sd_capacity_bytes() > 0) { Serial.print(sd_capacity_bytes()); Serial.print("B"); }
                         else { Serial.print("none"); }
