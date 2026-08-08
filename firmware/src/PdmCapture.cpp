@@ -215,7 +215,9 @@ int pdm_dma_read(int16_t* buf, int max)
         if (take > first) take = first;
         for (uint32_t i = 0; i < take; i++) {
             int32_t a = (int32_t)(int16_t)pdm_dma_buf[(pdm_dma_pos + i) & (PDM_DMA_BUF_SAMPLES - 1u)];
-            int32_t x = a * (int32_t)PDM_GAIN;
+            int32_t b = (int32_t)(int16_t)pdm_dma_buf2[(pdm_dma_pos2 + i) & (PDM_DMA_BUF_SAMPLES - 1u)];
+            int32_t bs = (int32_t)(((int64_t)b * 4312) >> 15);   /* scale U2 (7.6x) to U1 level */
+            int32_t x = ((a + bs) >> 1) * (int32_t)PDM_GAIN;
             if (x > 32767) x = 32767;
             if (x < -32768) x = -32768;
             int64_t acc = (int64_t)hpf_a * ((int64_t)hpf_y + x - hpf_x);
@@ -240,12 +242,12 @@ int pdm_dma_read(int16_t* buf, int max)
             else agc_peak -= agc_peak >> 12;
             int32_t target = (int32_t)((24000u << 16) / (agc_peak + 200u));
             if (agc_peak < agc_voice_floor) {
-                if (target > (3 << 16)) target = (3 << 16);       /* quiet: limit gain, don't pump noise */
+                if (target > (2 << 16)) target = (2 << 16);       /* quiet: limit gain, don't pump noise */
             } else {
-                if (target > (12 << 16)) target = (12 << 16);     /* speech: strong make-up for distant voice */
+                if (target > (8 << 16)) target = (8 << 16);       /* speech: make-up for distant voice */
             }
             if (target < (1 << 16)) target = (1 << 16);
-            agc_gain += (target - agc_gain) >> 7;
+            agc_gain += (target - agc_gain) >> 11;                /* slow adaptation, preserves dynamics */
             int32_t out = (int32_t)(((int64_t)y * agc_gain) >> 16);
             if (out > 32767) out = 32767;
             if (out < -32768) out = -32768;
