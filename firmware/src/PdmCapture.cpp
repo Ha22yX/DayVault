@@ -11,24 +11,6 @@ static volatile uint32_t samples = 0;
 static volatile int start_ret = 0;
 static volatile uint32_t isr_count = 0;
 
-void HAL_DFSDM_FilterRegConvCpltCallback(DFSDM_Filter_HandleTypeDef* h)
-{
-    if (h->Instance == DFSDM1_Filter1) {
-        uint32_t ch = 0;
-        int32_t v = HAL_DFSDM_FilterGetRegularValue(h, &ch);
-        int16_t s = (int16_t)(v >> 8);
-        if (ringbuf_write(sink, (const uint8_t*)&s, sizeof(s)) < sizeof(s))
-            overruns++;
-        samples++;
-    }
-}
-
-void HAL_DFSDM_FilterErrorCallback(DFSDM_Filter_HandleTypeDef* h)
-{
-    (void)h;
-    overruns++;
-}
-
 void pdm_init(RingBuf* s)
 {
     sink = s;
@@ -103,7 +85,10 @@ int pdm_try_read_sample(int16_t* out)
     if ((DFSDM1_Filter1->FLTISR & DFSDM_FLTISR_REOCF) != 0u) {
         uint32_t ch = 0;
         int32_t v = HAL_DFSDM_FilterGetRegularValue(&hf, &ch);
-        *out = (int16_t)v;
+        int32_t s = v * (int32_t)PDM_GAIN;
+        if (s > 32767) s = 32767;
+        if (s < -32768) s = -32768;
+        *out = (int16_t)s;
         samples++;
         return 1;
     }

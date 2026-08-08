@@ -234,6 +234,7 @@ static FIL rec_file;
 static bool rec_active = false;
 static uint32_t rec_data_bytes = 0;
 static uint32_t rec_seq = 1;
+static uint32_t rec_start_ms = 0;
 static uint8_t rec_chunk[64];
 static size_t rec_chunk_len = 0;
 static int rec_err = 0;
@@ -265,6 +266,7 @@ static void rec_start(void)
     ringbuf_init(&audio_rb, audio_buf, sizeof(audio_buf));
     pdm_init(&audio_rb);
     pdm_start();
+    rec_start_ms = millis();
     rec_active = true;
 }
 
@@ -281,6 +283,14 @@ static void rec_stop(void)
         if (rec_chunk_len == sizeof(rec_chunk)) rec_flush_chunk();
     }
     rec_flush_chunk();
+    uint32_t elapsed = millis() - rec_start_ms;
+    if (elapsed > 0 && rec_data_bytes > 0) {
+        uint32_t rate = (uint32_t)(((uint64_t)rec_data_bytes * 1000u) / (2u * (uint64_t)elapsed));
+        if (rate < 1000u) rate = 1000u;
+        if (rate > 48000u) rate = 48000u;
+        rec_cfg.sample_rate = rate;
+        rec_cfg.byte_rate = rate * rec_cfg.block_align;
+    }
     wav_build_header(hdr, &rec_cfg, rec_data_bytes);
     if (f_lseek(&rec_file, 0) == FR_OK) f_write(&rec_file, hdr, 44, &wr);
     f_sync(&rec_file);
@@ -288,7 +298,8 @@ static void rec_stop(void)
     fs_unmount();
     rec_active = false;
     Serial.print("AUTO stop err="); Serial.print(rec_err);
-    Serial.print(" bytes="); Serial.println(rec_data_bytes);
+    Serial.print(" bytes="); Serial.print(rec_data_bytes);
+    Serial.print(" rate="); Serial.println(rec_cfg.sample_rate);
 }
 
 static void rec_poll_samples(void)
