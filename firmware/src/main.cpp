@@ -615,6 +615,19 @@ void loop()
                         Serial.print(" corr="); Serial.print(cr);
                         Serial.print(" n="); Serial.println(nn);
                         pdm_stop();
+                    } else if (strncmp(line, "RAW", 3) == 0) {
+                        pdm_init(&audio_rb);
+                        pdm_start();
+                        uint32_t e = millis() + 1500;
+                        int16_t tmp[256];
+                        while (millis() < e) { pdm_dma_read(tmp, 256); }
+                        int32_t rr, zz, pp, nn;
+                        pdm_raw_diag(&rr, &zz, &pp, &nn);
+                        Serial.print("RAW rms="); Serial.print(rr);
+                        Serial.print(" zcr="); Serial.print(zz);
+                        Serial.print(" peak="); Serial.print(pp);
+                        Serial.print(" n="); Serial.println(nn);
+                        pdm_stop();
                     } else if (strncmp(line, "DBG", 3) == 0) {
                         Serial.print("DBG step="); Serial.print(g_dbg_step, HEX);
                         Serial.print(" fstep="); Serial.print(g_fault_step, HEX);

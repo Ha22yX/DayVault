@@ -27,15 +27,15 @@ static volatile uint32_t pdm_dma_underruns = 0;
 
 static int32_t hpf_y = 0;
 static int32_t hpf_x = 0;
-static const int32_t hpf_a = 30049;   /* Q15 alpha for ~150 Hz HPF at 10.4 kHz */
+static const int32_t hpf_a = 31405;   /* Q15 alpha for ~150 Hz HPF at 21.7 kHz */
 
 static int32_t eq_x1 = 0, eq_x2 = 0, eq_y1 = 0, eq_y2 = 0;
-static const int32_t eq_b0 = 21964, eq_b1 = -9898, eq_b2 = 3430;   /* peaking 3 kHz +8 dB Q1 Q14 @16.1k */
-static const int32_t eq_a1 = -9898, eq_a2 = 9008;
+static const int32_t eq_b0 = 21191, eq_b1 = -17061, eq_b2 = 5220;   /* peaking 3 kHz +8 dB Q1 Q14 @21.7k */
+static const int32_t eq_a1 = -17061, eq_a2 = 10027;
 
 static int32_t sh_x1 = 0, sh_x2 = 0, sh_y1 = 0, sh_y2 = 0;
-static const int32_t sh_b0 = 15870, sh_b1 = -30002, sh_b2 = 14223; /* low shelf 250 Hz -4 dB Q14 @16.1k */
-static const int32_t sh_a1 = -29937, sh_a2 = 13773;
+static const int32_t sh_b0 = 15999, sh_b1 = -30696, sh_b2 = 14749;  /* low shelf 250 Hz -4 dB Q14 @21.7k */
+static const int32_t sh_a1 = -30657, sh_a2 = 14403;
 
 static uint32_t agc_peak = 0;
 static int32_t agc_gain = 1 << 16;                                /* Q16 unity */
@@ -44,14 +44,35 @@ static const uint32_t agc_voice_floor = 700;                      /* pre-AGC pea
 extern volatile uint32_t g_dbg_step;
 void pdm_dbg_step(uint32_t v) { g_dbg_step = v; }
 
+void pdm_raw_diag(int32_t* rms, int32_t* zcr, int32_t* peak, int32_t* n)
+{
+    uint32_t base = pdm_dma_pos;
+    int64_t ss = 0;
+    int32_t mx = 0, prev = 0, zc = 0;
+    uint32_t cnt = 0;
+    for (uint32_t i = 0; i < 4096u; i++) {
+        int32_t v = (int32_t)(int16_t)pdm_dma_buf[(base + i) & (PDM_DMA_BUF_SAMPLES - 1u)];
+        ss += (int64_t)v * v;
+        if (i > 0 && ((v >= 0 && prev < 0) || (v < 0 && prev >= 0))) zc++;
+        prev = v;
+        int32_t a = (v < 0) ? -v : v;
+        if (a > mx) mx = a;
+        cnt++;
+    }
+    *rms = (int32_t)sqrt((double)ss / cnt);
+    *zcr = (int32_t)((int64_t)zc * 1000 / cnt);   /* zero crossings per 1000 samples ~ Hz-ish */
+    *peak = mx;
+    *n = (int32_t)cnt;
+}
+
 void pdm_dual_diag(int32_t* u1rms, int32_t* u2rms, int32_t* corr, int32_t* n)
 {
     uint32_t base = pdm_dma_pos;
     int64_t s1 = 0, s2 = 0, s12 = 0;
     uint32_t cnt = 0;
     for (uint32_t i = 0; i < 4096u; i++) {
-        int32_t a = ((int32_t)(int16_t)pdm_dma_buf[(base + i) & (PDM_DMA_BUF_SAMPLES - 1u)]) * (int32_t)PDM_GAIN;
-        int32_t b = ((int32_t)(int16_t)pdm_dma_buf2[(base + i) & (PDM_DMA_BUF_SAMPLES - 1u)]) * (int32_t)PDM_GAIN;
+        int32_t a = ((int32_t)(int16_t)pdm_dma_buf[(base + i) & (PDM_DMA_BUF_SAMPLES - 1u)]);
+        int32_t b = ((int32_t)(int16_t)pdm_dma_buf2[(base + i) & (PDM_DMA_BUF_SAMPLES - 1u)]);
         s1 += (int64_t)a * a;
         s2 += (int64_t)b * b;
         s12 += (int64_t)a * b;
