@@ -17,6 +17,7 @@ int      pdm_itst_start(void);
 int      pdm_isr_count_now(void);
 int      pdm_dma_read(int16_t* buf, int max);
 void     pdm_dbg_step(uint32_t v);
+void     pdm_dual_diag(int32_t* u1rms, int32_t* u2rms, int32_t* corr, int32_t* n);
 int      pdm_isr_count_now(void);
 
 #ifdef __cplusplus

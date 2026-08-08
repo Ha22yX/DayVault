@@ -540,42 +540,80 @@ void loop()
                         pdm_init(&audio_rb);
                         __HAL_RCC_DMA1_CLK_ENABLE();
                         __HAL_RCC_DMA2_CLK_ENABLE();
-                        Serial.print(" fltcr1="); Serial.print(DFSDM1_Filter1->FLTCR1, HEX);
-                        for (int di = 0; di < 2; di++) {
-                            DMA_Request_TypeDef* cselr = (di == 0) ? DMA1_CSELR : DMA2_CSELR;
-                            DMA_Channel_TypeDef* chans[7] = {0};
-                            if (di == 0) { chans[0]=DMA1_Channel1; chans[1]=DMA1_Channel2; chans[2]=DMA1_Channel3; chans[3]=DMA1_Channel4; chans[4]=DMA1_Channel5; chans[5]=DMA1_Channel6; chans[6]=DMA1_Channel7; }
-                            else { chans[0]=DMA2_Channel1; chans[1]=DMA2_Channel2; chans[2]=DMA2_Channel3; chans[3]=DMA2_Channel4; chans[4]=DMA2_Channel5; chans[5]=DMA2_Channel6; chans[6]=DMA2_Channel7; }
-                            for (int ci = 0; ci < 7; ci++) {
-                                for (int r = 0; r < 16; r++) {
-                                    DMA_Channel_TypeDef* dma = chans[ci];
-                                    dma->CCR = 0;
-                                    uint32_t shift = (uint32_t)ci * 4u;
-                                    cselr->CSELR &= ~(0xFu << shift);
-                                    cselr->CSELR |= ((uint32_t)r << shift);
-                                    dma->CPAR = (uint32_t)&DFSDM1_Filter1->FLTRDATAR;
-                                    dma->CMAR = (uint32_t)scan_buf;
-                                    dma->CNDTR = 4096;
-                                    dma->CCR = DMA_CCR_EN_Msk | DMA_CCR_CIRC_Msk | DMA_CCR_MINC_Msk
-                                             | DMA_CCR_PSIZE_0 | DMA_CCR_MSIZE_0;
-                                    DFSDM1_Filter1->FLTCR1 &= ~DFSDM_FLTCR1_DFEN;
-                                    DFSDM1_Filter1->FLTICR = DFSDM_FLTICR_CLRROVRF | DFSDM_FLTICR_CLRJOVRF;
-                                    DFSDM1_Filter1->FLTCR1 |= DFSDM_FLTCR1_DFEN | DFSDM_FLTCR1_RSWSTART;
-                                    uint32_t t0 = millis();
-                                    while ((millis() - t0) < 12) { }
-                                    uint32_t ndtr = dma->CNDTR;
-                                    dma->CCR = 0;
-                                    DFSDM1_Filter1->FLTCR1 &= ~DFSDM_FLTCR1_DFEN;
-                                    if (ndtr < 4095u) {
-                                        Serial.print("HIT dma"); Serial.print(di + 1);
-                                        Serial.print("ch"); Serial.print(ci + 1);
-                                        Serial.print(" r"); Serial.print(r);
-                                        Serial.print(" ndtr="); Serial.println(ndtr);
+                        for (int filt = 0; filt < 2; filt++) {
+                            uint32_t* reg = (filt == 0) ? (uint32_t*)&DFSDM1_Filter0->FLTRDATAR : (uint32_t*)&DFSDM1_Filter1->FLTRDATAR;
+                            for (int di = 0; di < 2; di++) {
+                                DMA_Request_TypeDef* cselr = (di == 0) ? DMA1_CSELR : DMA2_CSELR;
+                                DMA_Channel_TypeDef* chans[7] = {0};
+                                if (di == 0) { chans[0]=DMA1_Channel1; chans[1]=DMA1_Channel2; chans[2]=DMA1_Channel3; chans[3]=DMA1_Channel4; chans[4]=DMA1_Channel5; chans[5]=DMA1_Channel6; chans[6]=DMA1_Channel7; }
+                                else { chans[0]=DMA2_Channel1; chans[1]=DMA2_Channel2; chans[2]=DMA2_Channel3; chans[3]=DMA2_Channel4; chans[4]=DMA2_Channel5; chans[5]=DMA2_Channel6; chans[6]=DMA2_Channel7; }
+                                for (int ci = 0; ci < 7; ci++) {
+                                    for (int r = 0; r < 16; r++) {
+                                        DMA_Channel_TypeDef* dma = chans[ci];
+                                        dma->CCR = 0;
+                                        uint32_t shift = (uint32_t)ci * 4u;
+                                        cselr->CSELR &= ~(0xFu << shift);
+                                        cselr->CSELR |= ((uint32_t)r << shift);
+                                        dma->CPAR = (uint32_t)reg + 2u;
+                                        dma->CMAR = (uint32_t)scan_buf;
+                                        dma->CNDTR = 4096;
+                                        dma->CCR = DMA_CCR_EN_Msk | DMA_CCR_CIRC_Msk | DMA_CCR_MINC_Msk
+                                                 | DMA_CCR_PSIZE_0 | DMA_CCR_MSIZE_0;
+                                        DFSDM1_Filter0->FLTCR1 &= ~DFSDM_FLTCR1_DFEN;
+                                        DFSDM1_Filter1->FLTCR1 &= ~DFSDM_FLTCR1_DFEN;
+                                        DFSDM1_Filter0->FLTICR = DFSDM_FLTICR_CLRROVRF | DFSDM_FLTICR_CLRJOVRF;
+                                        DFSDM1_Filter1->FLTICR = DFSDM_FLTICR_CLRROVRF | DFSDM_FLTICR_CLRJOVRF;
+                                        DFSDM1_Filter0->FLTCR1 |= DFSDM_FLTCR1_DFEN | DFSDM_FLTCR1_RSWSTART;
+                                        DFSDM1_Filter1->FLTCR1 |= DFSDM_FLTCR1_DFEN | DFSDM_FLTCR1_RSWSTART;
+                                        uint32_t t0 = millis();
+                                        while ((millis() - t0) < 12) { }
+                                        uint32_t ndtr = dma->CNDTR;
+                                        dma->CCR = 0;
+                                        DFSDM1_Filter0->FLTCR1 &= ~DFSDM_FLTCR1_DFEN;
+                                        DFSDM1_Filter1->FLTCR1 &= ~DFSDM_FLTCR1_DFEN;
+                                        if (ndtr < 4095u) {
+                                            Serial.print("HIT f"); Serial.print(filt);
+                                            Serial.print(" d"); Serial.print(di + 1);
+                                            Serial.print("c"); Serial.print(ci + 1);
+                                            Serial.print(" r"); Serial.print(r);
+                                            Serial.print(" nd="); Serial.println(ndtr);
+                                        }
                                     }
                                 }
                             }
                         }
                         Serial.println("DSCAN done");
+                    } else if (strncmp(line, "NF", 2) == 0) {
+                        pdm_init(&audio_rb);
+                        DFSDM1_Channel1->CHCFGR1 = (DFSDM1_Channel1->CHCFGR1 & ~DFSDM_CHCFGR1_DATMPX) | (1u << DFSDM_CHCFGR1_DATMPX_Pos);
+                        DFSDM1_Channel1->CHDATINR = 0xAAAAu;
+                        pdm_start();
+                        int16_t buf[2048];
+                        int64_t ssq = 0;
+                        uint32_t cnt = 0;
+                        uint32_t e = millis() + 1000;
+                        while (millis() < e) {
+                            int n = pdm_dma_read(buf, 2048);
+                            for (int i = 0; i < n; i++) ssq += (int64_t)buf[i] * buf[i];
+                            cnt += (uint32_t)n;
+                        }
+                        int32_t rms = cnt ? (int32_t)sqrt((double)ssq / cnt) : 0;
+                        Serial.print("NF cnt="); Serial.print(cnt);
+                        Serial.print(" rms="); Serial.println(rms);
+                        pdm_stop();
+                    } else if (strncmp(line, "DUAL", 4) == 0) {
+                        pdm_init(&audio_rb);
+                        pdm_start();
+                        uint32_t e = millis() + 1500;
+                        int16_t tmp[256];
+                        while (millis() < e) { pdm_dma_read(tmp, 256); }
+                        int32_t u1r, u2r, cr, nn;
+                        pdm_dual_diag(&u1r, &u2r, &cr, &nn);
+                        Serial.print("DUAL u1="); Serial.print(u1r);
+                        Serial.print(" u2="); Serial.print(u2r);
+                        Serial.print(" corr="); Serial.print(cr);
+                        Serial.print(" n="); Serial.println(nn);
+                        pdm_stop();
                     } else if (strncmp(line, "DBG", 3) == 0) {
                         Serial.print("DBG step="); Serial.print(g_dbg_step, HEX);
                         Serial.print(" fstep="); Serial.print(g_fault_step, HEX);
