@@ -15,6 +15,8 @@ uint32_t pdm_sample_count(void);
 int      pdm_start_result(void);
 int      pdm_itst_start(void);
 int      pdm_isr_count_now(void);
+int      pdm_dma_read(int16_t* buf, int max);
+void     pdm_dbg_step(uint32_t v);
 int      pdm_isr_count_now(void);
 
 #ifdef __cplusplus

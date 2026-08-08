@@ -147,9 +147,18 @@ static bool sd_single(bool write, uint32_t lba, const uint8_t* src, uint8_t* dst
         spi_txrx(0xFF);
         r = spi_txrx(0xFF);
         if ((r & 0x1F) != 0x05) return false;
-        for (int j = 0; j < 64; j++) { r = spi_txrx(0xFF); if (r == 0xFF) break; }
+        uint32_t t0 = HAL_GetTick();
+        while ((HAL_GetTick() - t0) < 100) {
+            r = spi_txrx(0xFF);
+            if (r == 0xFF) break;
+        }
+        if (r != 0xFF) return false;
     } else {
-        for (int j = 0; j < 64; j++) { r = spi_txrx(0xFF); if (r == 0xFE) break; }
+        uint32_t t0 = HAL_GetTick();
+        while ((HAL_GetTick() - t0) < 100) {
+            r = spi_txrx(0xFF);
+            if (r == 0xFE) break;
+        }
         if (r != 0xFE) return false;
         for (int j = 0; j < 512; j++) dst[j] = spi_txrx(0xFF);
         spi_txrx(0xFF);

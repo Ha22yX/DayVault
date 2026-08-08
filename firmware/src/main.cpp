@@ -53,6 +53,62 @@ void SystemClock_Config(void)
 
 #define SYSTEM_MEMORY_BASE 0x1FFF0000u
 
+volatile uint32_t g_dbg_step __attribute__((section(".noinit")));
+volatile uint32_t g_fault_pc __attribute__((section(".noinit")));
+volatile uint32_t g_fault_lr __attribute__((section(".noinit")));
+volatile uint32_t g_fault_step __attribute__((section(".noinit")));
+volatile uint32_t g_fault_cfsr __attribute__((section(".noinit")));
+volatile uint32_t g_fault_bfar __attribute__((section(".noinit")));
+volatile uint32_t g_fault_mfar __attribute__((section(".noinit")));
+volatile uint32_t g_fault_hfsr __attribute__((section(".noinit")));
+
+static void dbg_step_set(uint32_t v) { g_dbg_step = v; }
+
+extern "C" void HardFault_Handler(void)
+{
+    uint32_t sp = __get_MSP();
+    g_fault_pc = *(volatile uint32_t*)(sp + 24u);
+    g_fault_lr = *(volatile uint32_t*)(sp + 20u);
+    g_fault_step = g_dbg_step;
+    g_fault_cfsr = *(volatile uint32_t*)0xE000ED28u;
+    g_fault_bfar = *(volatile uint32_t*)0xE000ED38u;
+    g_fault_mfar = *(volatile uint32_t*)0xE000ED34u;
+    g_fault_hfsr = *(volatile uint32_t*)0xE000ED2Cu;
+    g_dbg_step = 0xDDDDDDDDu;
+    NVIC_SystemReset();
+    while (1) { }
+}
+
+static void dbg_iwdg_init(void)
+{
+    if ((RCC->CSR & RCC_CSR_LSION) == 0) RCC->CSR |= RCC_CSR_LSION;
+    uint32_t t0 = HAL_GetTick();
+    while ((RCC->CSR & RCC_CSR_LSIRDY) == 0 && (HAL_GetTick() - t0) < 50) { }
+    IWDG->KR = 0x5555;
+    IWDG->PR = 6;             /* /256 -> 125 Hz at 32 kHz LSI */
+    IWDG->RLR = 625;          /* ~5 s */
+    IWDG->KR = 0xCCCC;
+    IWDG->KR = 0xAAAA;
+}
+
+static void dbg_iwdg_kick(void) { IWDG->KR = 0xAAAA; }
+
+static void dbg_report_last_step(void)
+{
+    uint32_t step = g_dbg_step;
+    uint32_t csr = RCC->CSR;
+    if (step == 0xDDDDDDDDu) {
+        Serial.print("DBG previous=FAULT");
+    } else if (step != 0) {
+        Serial.print("DBG previous=step"); Serial.print(step);
+    } else {
+        Serial.print("DBG previous=clean");
+    }
+    Serial.print(" csr="); Serial.print(csr, HEX);
+    RCC->CSR |= RCC_CSR_RMVF;
+    Serial.println();
+}
+
 static uint8_t audio_buf[PDM_RING_BYTES];
 static RingBuf audio_rb;
 
@@ -204,12 +260,47 @@ static void download_file(const char* fname)
     if (f_open(&f, path, FA_READ) != FR_OK) { Serial.println("DL open FAIL"); fs_unmount(); return; }
     Serial.print("DLSTART ");
     Serial.println((uint32_t)f_size(&f));
+    uint32_t total_read = 0, total_written = 0;
     while (f_read(&f, buf, sizeof(buf), &rd) == FR_OK && rd > 0) {
-        Serial.write(buf, rd);
+        dbg_iwdg_kick();
+        total_read += rd;
+        total_written += (uint32_t)Serial.write(buf, rd);
     }
     f_close(&f);
     fs_unmount();
-    Serial.println("DLEND");
+    Serial.print("DLEND read="); Serial.print(total_read);
+    Serial.print(" wr="); Serial.println(total_written);
+}
+
+static void download_file2(const char* fname)
+{
+    FIL f;
+    uint8_t buf[512];
+    UINT rd = 0;
+    char path[32];
+
+    snprintf(path, sizeof(path), "0:/%s", fname);
+    if (!fs_mount()) { Serial.println("DL2 mount FAIL"); return; }
+    if (f_open(&f, path, FA_READ) != FR_OK) { Serial.println("DL2 open FAIL"); fs_unmount(); return; }
+    uint32_t size = (uint32_t)f_size(&f);
+    Serial.print("DLSTART "); Serial.println(size);
+    uint32_t total = 0;
+    while (total < size) {
+        dbg_iwdg_kick();
+        if (f_read(&f, buf, sizeof(buf), &rd) != FR_OK || rd == 0) break;
+        total += rd;
+        Serial.write(buf, rd);
+        Serial.flush();
+        uint32_t t0 = millis();
+        while (!Serial.available()) {
+            dbg_iwdg_kick();
+            if ((millis() - t0) > 5000) { f_close(&f); fs_unmount(); Serial.println("DL2 ACK timeout"); return; }
+        }
+        while (Serial.available()) Serial.read();
+    }
+    f_close(&f);
+    fs_unmount();
+    Serial.print("DLEND read="); Serial.println(total);
 }
 
 static void dfu_enter(void)
@@ -310,16 +401,18 @@ static int rec_read_sample(int16_t* s)
 {
     while (rec_discard > 0) {
         int16_t tmp;
-        if (!pdm_try_read_sample(&tmp)) return 0;
+        if (pdm_dma_read(&tmp, 1) != 1) return 0;
         rec_discard--;
     }
-    return pdm_try_read_sample(s);
+    return pdm_dma_read(s, 1);
 }
 
 static void rec_poll_samples(void)
 {
-    int16_t s;
-    while (rec_read_sample(&s)) {
+    int16_t tmp[128];
+    int n = pdm_dma_read(tmp, 128);
+    for (int i = 0; i < n; i++) {
+        int16_t s = tmp[i];
         rec_chunk[rec_chunk_len++] = (uint8_t)s;
         rec_chunk[rec_chunk_len++] = (uint8_t)(s >> 8);
         if (rec_chunk_len == sizeof(rec_chunk)) rec_flush_chunk();
@@ -337,8 +430,11 @@ void setup()
     while (!Serial && (millis() - t) < 3000) { }
 
     Serial.println("DV step2 ready");
+    dbg_report_last_step();
     Serial.print("usb_detect="); Serial.print(digitalRead(PIN_USB_DETECT));
     Serial.print(" boot="); Serial.println(digitalRead(PIN_BOOT0));
+
+    dbg_iwdg_init();
 
     rec_cfg.format = 1;
     rec_cfg.sample_rate = AUDIO_SAMPLE_RATE;
@@ -352,6 +448,8 @@ void loop()
 {
     static uint32_t last_tick = 0;
     static int last_usb = -1;
+
+    dbg_iwdg_kick();
 
     if (Serial.available()) {
         static char line[64];
@@ -374,7 +472,31 @@ void loop()
                             f_closedir(&dir);
                         }
                         Serial.println("LIST done");
-                    } else                     if (strncmp(line, "ITST", 4) == 0) {
+                    } else                     if (strncmp(line, "DMAT", 4) == 0) {
+                        dbg_step_set(10);
+                        pdm_init(&audio_rb);
+                        dbg_step_set(20);
+                        pdm_start();
+                        dbg_step_set(30);
+                        uint32_t e = millis() + 2000;
+                        uint32_t cnt = 0;
+                        uint32_t lo = 0xFFFFFFFF;
+                        while (millis() < e) {
+                            int16_t tmp[256];
+                            int n = pdm_dma_read(tmp, 256);
+                            cnt += (uint32_t)n;
+                            if (n < lo) lo = (uint32_t)n;
+                            if (millis() % 250 == 0) dbg_step_set(40);
+                        }
+                        dbg_step_set(50);
+                        Serial.print("DMAT cnt="); Serial.print(cnt);
+                        Serial.print(" rate="); Serial.print(cnt / 2u);
+                        Serial.print(" ndtr="); Serial.print(DMA1_Channel5->CNDTR);
+                        Serial.print(" start="); Serial.print(pdm_start_result());
+                        Serial.print(" isr="); Serial.println(DFSDM1_Filter1->FLTISR, HEX);
+                        pdm_stop();
+                        dbg_step_set(0);
+                    } else if (strncmp(line, "ITST", 4) == 0) {
                         pdm_itst_start();
                         uint32_t e = millis() + 2000;
                         while (millis() < e) { }
@@ -384,6 +506,8 @@ void loop()
                         sample_stats();
                     } else if (strncmp(line, "DOWNLOAD ", 9) == 0) {
                         download_file(line + 9);
+                    } else if (strncmp(line, "DL2 ", 4) == 0) {
+                        download_file2(line + 4);
                     } else if (strncmp(line, "REC", 3) == 0 && line[3] != ' ') {
                         rec_start();
                         Serial.print("REC started seq="); Serial.println(rec_seq);
@@ -397,6 +521,59 @@ void loop()
                         Serial.println("entering DFU...");
                         Serial.flush();
                         dfu_enter();
+                    } else if (strncmp(line, "DSCAN", 5) == 0) {
+                        static int16_t scan_buf[4096];
+                        pdm_init(&audio_rb);
+                        __HAL_RCC_DMA1_CLK_ENABLE();
+                        __HAL_RCC_DMA2_CLK_ENABLE();
+                        Serial.print(" fltcr1="); Serial.print(DFSDM1_Filter1->FLTCR1, HEX);
+                        for (int di = 0; di < 2; di++) {
+                            DMA_Request_TypeDef* cselr = (di == 0) ? DMA1_CSELR : DMA2_CSELR;
+                            DMA_Channel_TypeDef* chans[7] = {0};
+                            if (di == 0) { chans[0]=DMA1_Channel1; chans[1]=DMA1_Channel2; chans[2]=DMA1_Channel3; chans[3]=DMA1_Channel4; chans[4]=DMA1_Channel5; chans[5]=DMA1_Channel6; chans[6]=DMA1_Channel7; }
+                            else { chans[0]=DMA2_Channel1; chans[1]=DMA2_Channel2; chans[2]=DMA2_Channel3; chans[3]=DMA2_Channel4; chans[4]=DMA2_Channel5; chans[5]=DMA2_Channel6; chans[6]=DMA2_Channel7; }
+                            for (int ci = 0; ci < 7; ci++) {
+                                for (int r = 0; r < 16; r++) {
+                                    DMA_Channel_TypeDef* dma = chans[ci];
+                                    dma->CCR = 0;
+                                    uint32_t shift = (uint32_t)ci * 4u;
+                                    cselr->CSELR &= ~(0xFu << shift);
+                                    cselr->CSELR |= ((uint32_t)r << shift);
+                                    dma->CPAR = (uint32_t)&DFSDM1_Filter1->FLTRDATAR;
+                                    dma->CMAR = (uint32_t)scan_buf;
+                                    dma->CNDTR = 4096;
+                                    dma->CCR = DMA_CCR_EN_Msk | DMA_CCR_CIRC_Msk | DMA_CCR_MINC_Msk
+                                             | DMA_CCR_PSIZE_0 | DMA_CCR_MSIZE_0;
+                                    DFSDM1_Filter1->FLTCR1 &= ~DFSDM_FLTCR1_DFEN;
+                                    DFSDM1_Filter1->FLTICR = DFSDM_FLTICR_CLRROVRF | DFSDM_FLTICR_CLRJOVRF;
+                                    DFSDM1_Filter1->FLTCR1 |= DFSDM_FLTCR1_DFEN | DFSDM_FLTCR1_RSWSTART;
+                                    uint32_t t0 = millis();
+                                    while ((millis() - t0) < 12) { }
+                                    uint32_t ndtr = dma->CNDTR;
+                                    dma->CCR = 0;
+                                    DFSDM1_Filter1->FLTCR1 &= ~DFSDM_FLTCR1_DFEN;
+                                    if (ndtr < 4095u) {
+                                        Serial.print("HIT dma"); Serial.print(di + 1);
+                                        Serial.print("ch"); Serial.print(ci + 1);
+                                        Serial.print(" r"); Serial.print(r);
+                                        Serial.print(" ndtr="); Serial.println(ndtr);
+                                    }
+                                }
+                            }
+                        }
+                        Serial.println("DSCAN done");
+                    } else if (strncmp(line, "DBG", 3) == 0) {
+                        Serial.print("DBG step="); Serial.print(g_dbg_step, HEX);
+                        Serial.print(" fstep="); Serial.print(g_fault_step, HEX);
+                        Serial.print(" pc="); Serial.print(g_fault_pc, HEX);
+                        Serial.print(" lr="); Serial.print(g_fault_lr, HEX);
+                        Serial.print(" cfsr="); Serial.print(g_fault_cfsr, HEX);
+                        Serial.print(" bfar="); Serial.print(g_fault_bfar, HEX);
+                        Serial.print(" mfar="); Serial.print(g_fault_mfar, HEX);
+                        Serial.print(" hfsr="); Serial.print(g_fault_hfsr, HEX);
+                        Serial.print(" csr="); Serial.print(RCC->CSR, HEX);
+                        Serial.print(" up="); Serial.println(millis());
+                        g_dbg_step = 0;
                     } else if (strncmp(line, "INFO", 4) == 0) {
                         Serial.print("INFO usb_detect="); Serial.print(digitalRead(PIN_USB_DETECT));
                         Serial.print(" boot="); Serial.print(digitalRead(PIN_BOOT0));

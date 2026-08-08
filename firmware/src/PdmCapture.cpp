@@ -3,6 +3,10 @@
 #include "stm32l4xx_hal.h"
 #include <string.h>
 
+#define PDM_DMA_BUF_SAMPLES 16384u
+#define PDM_DMA_BUF_FREE_MARGIN  64u                            /* never read within this many samples of write head */
+#define PDM_DMA_CH      DMA1_Channel5                          /* DFSDM1_FLT1 data request on L4x2 */
+
 static DFSDM_Filter_HandleTypeDef hf;
 static DFSDM_Channel_HandleTypeDef hc;
 static RingBuf* sink = NULL;
@@ -10,6 +14,13 @@ static volatile uint32_t overruns = 0;
 static volatile uint32_t samples = 0;
 static volatile int start_ret = 0;
 static volatile uint32_t isr_count = 0;
+
+static int16_t pdm_dma_buf[PDM_DMA_BUF_SAMPLES] __attribute__((aligned(4)));
+static volatile uint32_t pdm_dma_pos = 0;
+static volatile uint32_t pdm_dma_underruns = 0;
+
+extern volatile uint32_t g_dbg_step;
+void pdm_dbg_step(uint32_t v) { g_dbg_step = v; }
 
 void pdm_init(RingBuf* s)
 {
@@ -24,6 +35,7 @@ void pdm_init(RingBuf* s)
     __HAL_RCC_DFSDM1_CLK_ENABLE();
     __HAL_RCC_GPIOB_CLK_ENABLE();
     __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_DMA1_CLK_ENABLE();
 
     g.Pin = PIN_PDM_CLK;
     g.Mode = GPIO_MODE_AF_PP;
@@ -52,8 +64,8 @@ void pdm_init(RingBuf* s)
 
     hf.Instance = DFSDM1_Filter1;
     hf.Init.RegularParam.Trigger = DFSDM_FILTER_SW_TRIGGER;
-    hf.Init.RegularParam.FastMode = DISABLE;
-    hf.Init.RegularParam.DmaMode = DISABLE;
+    hf.Init.RegularParam.FastMode = ENABLE;
+    hf.Init.RegularParam.DmaMode = ENABLE;
     hf.Init.InjectedParam.Trigger = DFSDM_FILTER_SW_TRIGGER;
     hf.Init.InjectedParam.ScanMode = DISABLE;
     hf.Init.InjectedParam.DmaMode = DISABLE;
@@ -64,20 +76,60 @@ void pdm_init(RingBuf* s)
     hf.Init.FilterParam.IntOversampling = 1;
     HAL_DFSDM_FilterInit(&hf);
     HAL_DFSDM_FilterConfigRegChannel(&hf, DFSDM_CHANNEL_1, DFSDM_CONTINUOUS_CONV_ON);
+
+    pdm_dbg_step(11);
+    DMA1_CSELR->CSELR &= ~DMA_CSELR_C5S;
+    pdm_dbg_step(12);
+    PDM_DMA_CH->CPAR = (uint32_t)&DFSDM1_Filter1->FLTRDATAR;
+    pdm_dbg_step(13);
+    PDM_DMA_CH->CMAR = (uint32_t)pdm_dma_buf;
+    pdm_dbg_step(14);
 }
 
 void pdm_start(void)
 {
     overruns = 0;
     samples = 0;
+    pdm_dma_pos = 0;
+    pdm_dma_underruns = 0;
 
-    hf.Instance->FLTICR = DFSDM_FLTICR_CLRROVRF;
+    DMA1_CSELR->CSELR &= ~DMA_CSELR_C5S;
+    PDM_DMA_CH->CCR = 0;
+    PDM_DMA_CH->CNDTR = PDM_DMA_BUF_SAMPLES;
+    PDM_DMA_CH->CCR = DMA_CCR_EN_Msk | DMA_CCR_CIRC_Msk | DMA_CCR_MINC_Msk
+                    | DMA_CCR_PSIZE_0 | DMA_CCR_MSIZE_0 | DMA_CCR_PL_1;
+
+    hf.Instance->FLTICR = DFSDM_FLTICR_CLRROVRF | DFSDM_FLTICR_CLRJOVRF;
     start_ret = HAL_DFSDM_FilterRegularStart(&hf);
 }
 
 void pdm_stop(void)
 {
     HAL_DFSDM_FilterRegularStop(&hf);
+    PDM_DMA_CH->CCR &= ~DMA_CCR_EN_Msk;
+}
+
+int pdm_dma_read(int16_t* buf, int max)
+{
+    int n = 0;
+    while (n < max) {
+        uint32_t ndtr = PDM_DMA_CH->CNDTR;
+        uint32_t written = (PDM_DMA_BUF_SAMPLES - ndtr) & (PDM_DMA_BUF_SAMPLES - 1u);
+        uint32_t avail = (written + PDM_DMA_BUF_SAMPLES - pdm_dma_pos) & (PDM_DMA_BUF_SAMPLES - 1u);
+        if (avail > PDM_DMA_BUF_SAMPLES - PDM_DMA_BUF_FREE_MARGIN) {
+            avail = PDM_DMA_BUF_SAMPLES - PDM_DMA_BUF_FREE_MARGIN;
+        }
+        if (avail == 0) break;
+        uint32_t take = avail;
+        if (take > (uint32_t)(max - n)) take = (uint32_t)(max - n);
+        uint32_t first = PDM_DMA_BUF_SAMPLES - pdm_dma_pos;
+        if (take > first) take = first;
+        for (uint32_t i = 0; i < take; i++) {
+            buf[n++] = pdm_dma_buf[(pdm_dma_pos + i) & (PDM_DMA_BUF_SAMPLES - 1u)];
+        }
+        pdm_dma_pos = (pdm_dma_pos + take) & (PDM_DMA_BUF_SAMPLES - 1u);
+    }
+    return n;
 }
 
 int pdm_try_read_sample(int16_t* out)
