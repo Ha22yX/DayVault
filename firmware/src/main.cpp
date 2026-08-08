@@ -1,7 +1,5 @@
 #include <Arduino.h>
 #include "stm32l4xx_hal.h"
-#include "Config.h"
-#include "UsbComposite.h"
 
 extern "C" void SystemClock_Config(void);
 
@@ -42,33 +40,29 @@ void SystemClock_Config(void)
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK) { while (1) { } }
 }
 
-static uint32_t banner_until = 0;
+#define PIN_USB_DETECT 9    /* PA9 */
+#define PIN_BOOT0       51  /* PH3 */
 
 void setup()
 {
     SystemClock_Config();
-
-    __HAL_RCC_GPIOH_CLK_ENABLE();
-    GPIO_InitTypeDef boot_pin = {0};
-    boot_pin.Pin = GPIO_PIN_3;
-    boot_pin.Mode = GPIO_MODE_INPUT;
-    boot_pin.Pull = GPIO_PULLDOWN;
-    HAL_GPIO_Init(GPIOH, &boot_pin);
-
-    pinMode(PIN_LED, OUTPUT);
-    digitalWrite(PIN_LED, LOW);
     pinMode(PIN_USB_DETECT, INPUT);
+    pinMode(PIN_BOOT0, INPUT_PULLDOWN);
 
-    usb_composite_init();
-    banner_until = millis() + 5000u;
-    cdc_printf("DV alive usb_detect=%d boot=%d\n", HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_9), HAL_GPIO_ReadPin(GPIOH, GPIO_PIN_3));
+    Serial.begin(115200);
+    uint32_t t = millis();
+    while (!Serial && (millis() - t) < 3000) { }
+
+    Serial.println("DV alive step1");
+    Serial.print("usb_detect="); Serial.print(digitalRead(PIN_USB_DETECT));
+    Serial.print(" boot="); Serial.println(digitalRead(PIN_BOOT0));
 }
 
 void loop()
 {
-    usb_composite_poll();
-    if (millis() < banner_until) {
-        cdc_printf("DV alive usb_detect=%d boot=%d\n", HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_9), HAL_GPIO_ReadPin(GPIOH, GPIO_PIN_3));
+    delay(500);
+    if (Serial) {
+        Serial.print("tick usb_detect="); Serial.print(digitalRead(PIN_USB_DETECT));
+        Serial.print(" boot="); Serial.println(digitalRead(PIN_BOOT0));
     }
-    delay(100);
 }
