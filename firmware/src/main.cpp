@@ -43,6 +43,25 @@ void SystemClock_Config(void)
 #define PIN_USB_DETECT 9    /* PA9 */
 #define PIN_BOOT0       51  /* PH3 */
 
+#define SYSTEM_MEMORY_BASE 0x1FFF0000u
+
+static void dfu_enter(void)
+{
+    HAL_DeInit();
+    SysTick->CTRL = 0;
+    SysTick->LOAD = 0;
+    SysTick->VAL = 0;
+    __disable_irq();
+
+    uint32_t msp = *(volatile uint32_t *)SYSTEM_MEMORY_BASE;
+    if ((msp & 0xFFF00000u) != 0x20000000u) {
+        NVIC_SystemReset();   /* invalid bootloader stack: reset instead */
+        return;
+    }
+    __set_MSP(msp);
+    ((void (*)(void)) * (volatile uint32_t *)(SYSTEM_MEMORY_BASE + 4u))();
+}
+
 void setup()
 {
     SystemClock_Config();
@@ -53,16 +72,48 @@ void setup()
     uint32_t t = millis();
     while (!Serial && (millis() - t) < 3000) { }
 
-    Serial.println("DV alive step1");
+    Serial.println("DV step2 ready");
     Serial.print("usb_detect="); Serial.print(digitalRead(PIN_USB_DETECT));
     Serial.print(" boot="); Serial.println(digitalRead(PIN_BOOT0));
 }
 
 void loop()
 {
-    delay(500);
-    if (Serial) {
-        Serial.print("tick usb_detect="); Serial.print(digitalRead(PIN_USB_DETECT));
-        Serial.print(" boot="); Serial.println(digitalRead(PIN_BOOT0));
+    static uint32_t last_tick = 0;
+
+    if (Serial.available()) {
+        static char line[64];
+        static size_t n = 0;
+        while (Serial.available()) {
+            char c = (char)Serial.read();
+            if (c == '\n' || c == '\r') {
+                if (n > 0) {
+                    line[n] = 0;
+                    if (strncmp(line, "DFU", 3) == 0) {
+                        Serial.println("entering DFU...");
+                        Serial.flush();
+                        dfu_enter();
+                    } else if (strncmp(line, "INFO", 4) == 0) {
+                        Serial.print("INFO usb_detect="); Serial.print(digitalRead(PIN_USB_DETECT));
+                        Serial.print(" boot="); Serial.print(digitalRead(PIN_BOOT0));
+                        Serial.print(" up="); Serial.println(millis());
+                    } else {
+                        Serial.print("? "); Serial.println(line);
+                    }
+                    n = 0;
+                }
+            } else if (n < sizeof(line) - 1) {
+                line[n++] = c;
+            }
+        }
+    }
+
+    uint32_t now = millis();
+    if (now - last_tick >= 1000) {
+        last_tick = now;
+        if (Serial) {
+            Serial.print("tick usb_detect="); Serial.print(digitalRead(PIN_USB_DETECT));
+            Serial.print(" boot="); Serial.println(digitalRead(PIN_BOOT0));
+        }
     }
 }
