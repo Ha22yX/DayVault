@@ -94,7 +94,6 @@ bool usb_composite_init(void)
 
 void usb_composite_deinit(void)
 {
-    USBD_Stop(&hUsbDevice);
     USBD_DeInit(&hUsbDevice);
 }
 
@@ -106,6 +105,14 @@ void USB_IRQHandler(void) { HAL_PCD_IRQHandler(&hpcd); }
 void HAL_PCD_MspInit(PCD_HandleTypeDef* h) {
     if (h->Instance == USB) {
         __HAL_RCC_USB_CLK_ENABLE();
+        __HAL_RCC_GPIOA_CLK_ENABLE();
+        GPIO_InitTypeDef gpio = {0};
+        gpio.Pin = GPIO_PIN_11 | GPIO_PIN_12;
+        gpio.Mode = GPIO_MODE_AF_PP;
+        gpio.Pull = GPIO_NOPULL;
+        gpio.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+        gpio.Alternate = GPIO_AF10_USB_FS;
+        HAL_GPIO_Init(GPIOA, &gpio);
         HAL_NVIC_SetPriority(USB_IRQn, 1, 0);
         HAL_NVIC_EnableIRQ(USB_IRQn);
     }
@@ -132,7 +139,7 @@ USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef* pdev) {
     hpcd.Init.battery_charging_enable = DISABLE;
     __HAL_RCC_PWR_CLK_ENABLE();
     HAL_PWREx_EnableVddUSB();
-    HAL_PCD_Init(&hpcd);
+    if (HAL_PCD_Init(&hpcd) != HAL_OK) return USBD_FAIL;
     return USBD_OK;
 }
 USBD_StatusTypeDef USBD_LL_DeInit(USBD_HandleTypeDef* pdev) { (void)pdev; HAL_PCD_DeInit(&hpcd); return USBD_OK; }

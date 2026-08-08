@@ -24,7 +24,7 @@ static uint8_t* dev_desc_ptr(USBD_SpeedTypeDef speed, uint16_t* len)
     memset(dev_desc, 0, USB_LEN_DEV_DESC);
     dev_desc[0] = USB_LEN_DEV_DESC; dev_desc[1] = USB_DESC_TYPE_DEVICE;
     dev_desc[2] = 0x00; dev_desc[3] = 0x02;
-    dev_desc[4] = 0xEF; dev_desc[5] = 0x02; dev_desc[6] = 0x01;   /* composite */
+    dev_desc[4] = 0x02; dev_desc[5] = 0x00; dev_desc[6] = 0x00;   /* CDC class at device level */
     dev_desc[7] = USB_MAX_EP0_SIZE;
     dev_desc[8] = (uint8_t)USBD_VID; dev_desc[9] = (uint8_t)(USBD_VID >> 8);
     dev_desc[10] = (uint8_t)USBD_PID; dev_desc[11] = (uint8_t)(USBD_PID >> 8);
