@@ -130,6 +130,8 @@ USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef* pdev) {
     hpcd.Init.phy_itface = PCD_PHY_EMBEDDED; hpcd.Init.ep0_mps = USB_MAX_EP0_SIZE;
     hpcd.Init.low_power_enable = DISABLE; hpcd.Init.lpm_enable = DISABLE;
     hpcd.Init.battery_charging_enable = DISABLE;
+    __HAL_RCC_PWR_CLK_ENABLE();
+    HAL_PWREx_EnableVddUSB();
     HAL_PCD_Init(&hpcd);
     return USBD_OK;
 }
