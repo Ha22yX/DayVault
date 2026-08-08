@@ -15,9 +15,9 @@
 #define PIN_PDM_DATA      GPIO_PIN_12
 #define PIN_PDM_DATA_PORT GPIOB
 
-#define PDM_CKOUT_DIVIDER 26u
-#define PDM_OSR           128u
-#define PDM_GAIN          64u
+#define PDM_CKOUT_DIVIDER 17u
+#define PDM_OSR           96u
+#define PDM_GAIN          128u
 #define PDM_HALF_SAMPLES  512u
 #define PDM_RING_BYTES    (PDM_HALF_SAMPLES * 2u * 8u)   /* 8 KB ring */
 

@@ -27,7 +27,14 @@ static volatile uint32_t pdm_dma_underruns = 0;
 
 static int32_t hpf_y = 0;
 static int32_t hpf_x = 0;
-static const int32_t hpf_a = 29300;   /* Q15 alpha for ~150 Hz HPF at 7.9 kHz */
+static const int32_t hpf_a = 30049;   /* Q15 alpha for ~150 Hz HPF at 10.4 kHz */
+
+static int32_t eq_x1 = 0, eq_x2 = 0, eq_y1 = 0, eq_y2 = 0;
+static const int32_t eq_b0 = 20571, eq_b1 = 5234, eq_b2 = 3774;    /* peaking 3 kHz +6 dB Q1 Q14 */
+static const int32_t eq_a1 = 5234, eq_a2 = 7961;
+
+static uint32_t agc_peak = 0;
+static int32_t agc_gain = 1 << 16;                                /* Q16 unity */
 
 extern volatile uint32_t g_dbg_step;
 void pdm_dbg_step(uint32_t v) { g_dbg_step = v; }
@@ -157,6 +164,9 @@ void pdm_start(void)
     pdm_dma_underruns = 0;
     hpf_y = 0;
     hpf_x = 0;
+    eq_x1 = 0; eq_x2 = 0; eq_y1 = 0; eq_y2 = 0;
+    agc_peak = 0;
+    agc_gain = 1 << 16;
 
     DMA1_CSELR->CSELR &= ~(DMA_CSELR_C4S | DMA_CSELR_C5S);
     PDM_DMA_CH->CCR = 0;
@@ -208,7 +218,23 @@ int pdm_dma_read(int16_t* buf, int max)
             if (y < -32768) y = -32768;
             hpf_x = x;
             hpf_y = y;
-            buf[n++] = (int16_t)y;
+            x = y;
+            int64_t eq = ((int64_t)eq_b0 * x + (int64_t)eq_b1 * eq_x1 + (int64_t)eq_b2 * eq_x2
+                          - (int64_t)eq_a1 * eq_y1 - (int64_t)eq_a2 * eq_y2) >> 14;
+            eq_x2 = eq_x1; eq_x1 = x;
+            eq_y2 = eq_y1; eq_y1 = (int32_t)eq;
+            y = (int32_t)eq;
+            uint32_t pk = (y < 0) ? (uint32_t)(-y) : (uint32_t)y;
+            if (pk > agc_peak) agc_peak += (pk - agc_peak) >> 2;
+            else agc_peak -= agc_peak >> 12;
+            int32_t target = (int32_t)((24000u << 16) / (agc_peak + 200u));
+            if (target > (8 << 16)) target = (8 << 16);
+            if (target < (1 << 16)) target = (1 << 16);
+            agc_gain += (target - agc_gain) >> 7;
+            int32_t out = (int32_t)(((int64_t)y * agc_gain) >> 16);
+            if (out > 32767) out = 32767;
+            if (out < -32768) out = -32768;
+            buf[n++] = (int16_t)out;
         }
         pdm_dma_pos = (pdm_dma_pos + take) & (PDM_DMA_BUF_SAMPLES - 1u);
         pdm_dma_pos2 = (pdm_dma_pos2 + take) & (PDM_DMA_BUF_SAMPLES - 1u);
