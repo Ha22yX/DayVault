@@ -7,6 +7,7 @@
 #include "RingBuf.h"
 #include "PdmCapture.h"
 #include "WavFile.h"
+#include "NoiseReduction.h"
 #include <string.h>
 
 extern "C" void SystemClock_Config(void);
@@ -359,6 +360,7 @@ static void rec_start(void)
     ringbuf_init(&audio_rb, audio_buf, sizeof(audio_buf));
     pdm_init(&audio_rb);
     pdm_start();
+    nr_init();
     rec_start_ms = millis();
     rec_active = true;
 }
@@ -409,13 +411,23 @@ static int rec_read_sample(int16_t* s)
 
 static void rec_poll_samples(void)
 {
+    static int16_t nr_in[128];
+    static int nr_fill = 0;
     int16_t tmp[128];
     int n = pdm_dma_read(tmp, 128);
     for (int i = 0; i < n; i++) {
-        int16_t s = tmp[i];
-        rec_chunk[rec_chunk_len++] = (uint8_t)s;
-        rec_chunk[rec_chunk_len++] = (uint8_t)(s >> 8);
-        if (rec_chunk_len == sizeof(rec_chunk)) rec_flush_chunk();
+        nr_in[nr_fill++] = tmp[i];
+        if (nr_fill == 128) {
+            int16_t out[128];
+            nr_process(nr_in, out, 128);
+            for (int j = 0; j < 128; j++) {
+                int16_t s = out[j];
+                rec_chunk[rec_chunk_len++] = (uint8_t)s;
+                rec_chunk[rec_chunk_len++] = (uint8_t)(s >> 8);
+                if (rec_chunk_len == sizeof(rec_chunk)) rec_flush_chunk();
+            }
+            nr_fill = 0;
+        }
     }
 }
 
