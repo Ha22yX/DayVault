@@ -4,6 +4,10 @@
 #include "SdCard.h"
 #include "Fs.h"
 #include "ff.h"
+#include "RingBuf.h"
+#include "PdmCapture.h"
+#include "WavFile.h"
+#include <string.h>
 
 extern "C" void SystemClock_Config(void);
 
@@ -49,6 +53,79 @@ void SystemClock_Config(void)
 
 #define SYSTEM_MEMORY_BASE 0x1FFF0000u
 
+static uint8_t audio_buf[PDM_RING_BYTES];
+static RingBuf audio_rb;
+
+static void record_test(int seconds)
+{
+    WavConfig cfg;
+    cfg.format = 1;
+    cfg.sample_rate = AUDIO_SAMPLE_RATE;
+    cfg.channels = AUDIO_CHANNELS;
+    cfg.bits = AUDIO_BITS;
+    cfg.block_align = (uint16_t)(AUDIO_CHANNELS * (AUDIO_BITS / 8u));
+    cfg.byte_rate = cfg.sample_rate * cfg.block_align;
+
+    FIL f;
+    static uint8_t blk[512];
+    static uint8_t wav_hdr_buf[44];
+    uint8_t* hdr = wav_hdr_buf;
+    uint32_t data_bytes = 0;
+    UINT wr = 0;
+
+    Serial.print("REC start fs=");
+    Serial.print(fs_mount_result());
+    if (f_open(&f, "/REC001.WAV", FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) {
+        Serial.println(" open FAIL");
+        return;
+    }
+    wav_build_header(hdr, &cfg, 0);
+    if (f_write(&f, hdr, 44, &wr) != FR_OK || wr != 44) { Serial.println(" hdr FAIL"); f_close(&f); return; }
+    Serial.println();
+
+    ringbuf_init(&audio_rb, audio_buf, sizeof(audio_buf));
+    pdm_init(&audio_rb);
+    Serial.println(" init ok");
+    pdm_start();
+    Serial.println(" start ok");
+    Serial.print(" APB2ENR="); Serial.print(RCC->APB2ENR, HEX);
+    Serial.print(" CCIPR="); Serial.print(RCC->CCIPR, HEX);
+    Serial.print(" FLTCR1="); Serial.print(DFSDM1_Filter1->FLTCR1, HEX);
+    Serial.print(" start_ret="); Serial.print(pdm_start_result());
+    Serial.print(" FLTISR="); Serial.println(DFSDM1_Filter1->FLTISR, HEX);
+
+    uint32_t end = millis() + (uint32_t)seconds * 1000u;
+    uint8_t chunk[64];
+    size_t chunk_len = 0;
+    while (millis() < end) {
+        int16_t s;
+        while (pdm_try_read_sample(&s)) {
+            chunk[chunk_len++] = (uint8_t)s;
+            chunk[chunk_len++] = (uint8_t)(s >> 8);
+            if (chunk_len == sizeof(chunk)) {
+                if (f_write(&f, chunk, (UINT)chunk_len, &wr) != FR_OK || wr != chunk_len) { chunk_len = 0; goto done; }
+                data_bytes += wr;
+                chunk_len = 0;
+            }
+        }
+    }
+done:
+    if (chunk_len > 0) {
+        if (f_write(&f, chunk, (UINT)chunk_len, &wr) == FR_OK) data_bytes += wr;
+    }
+    pdm_stop();
+    wav_patch_sizes(hdr, data_bytes);
+    if (f_lseek(&f, 0) == FR_OK) f_write(&f, hdr, 44, &wr);
+    f_close(&f);
+
+    Serial.print("REC done bytes=");
+    Serial.print(data_bytes);
+    Serial.print(" samples=");
+    Serial.print(pdm_sample_count());
+    Serial.print(" overruns=");
+    Serial.println(pdm_overruns());
+}
+
 static void dfu_enter(void)
 {
     HAL_DeInit();
@@ -93,7 +170,9 @@ void loop()
             if (c == '\n' || c == '\r') {
                 if (n > 0) {
                     line[n] = 0;
-                    if (strncmp(line, "DFU", 3) == 0) {
+                    if (strncmp(line, "CAPT", 4) == 0) {
+                        record_test(5);
+                    } else if (strncmp(line, "DFU", 3) == 0) {
                         Serial.println("entering DFU...");
                         Serial.flush();
                         dfu_enter();

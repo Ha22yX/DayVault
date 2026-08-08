@@ -37,6 +37,12 @@ static bool sd_cmd(uint8_t cmd, uint32_t arg, uint8_t crc, uint8_t* resp, uint32
 
 static void sd_end(void) { spi_txrx(0xFF); cs_high(); spi_txrx(0xFF); }
 
+static void spi_set_speed(uint32_t prescaler)
+{
+    hspi1.Init.BaudRatePrescaler = prescaler;
+    HAL_SPI_Init(&hspi1);
+}
+
 bool sd_init(void)
 {
     uint8_t r;
@@ -81,11 +87,14 @@ bool sd_init(void)
     hspi1.Init.CRCPolynomial = 7;
     HAL_SPI_Init(&hspi1);
 
+    spi_set_speed(SPI_BAUDRATEPRESCALER_256);   /* ~312 kHz for init handshake */
+
     cs_high();
     for (int i = 0; i < 80; i++) spi_txrx(0xFF);
 
     if (!sd_cmd(0, 0, 0x95, &r, 20)) return false;
     if (r != 1) return false;
+    HAL_Delay(2);
 
     if (sd_cmd(8, 0x1AA, 0x87, &r, 20)) {
         uint8_t v[4];
@@ -102,6 +111,8 @@ bool sd_init(void)
         if (r == 0) break;
     }
     if (r != 0) return false;
+
+    spi_set_speed(SPI_BAUDRATEPRESCALER_8);   /* 10 MHz for data */
 
     {
         uint8_t csd[16];
