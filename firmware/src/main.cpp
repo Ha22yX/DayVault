@@ -2,6 +2,8 @@
 #include "stm32l4xx_hal.h"
 #include "Config.h"
 #include "SdCard.h"
+#include "Fs.h"
+#include "ff.h"
 
 extern "C" void SystemClock_Config(void);
 
@@ -103,6 +105,68 @@ void loop()
                         if (sd_capacity_bytes() > 0) { Serial.print(sd_capacity_bytes()); Serial.print("B"); }
                         else { Serial.print("none"); }
                         Serial.println();
+                    } else if (strncmp(line, "MOUNT", 5) == 0) {
+                        Serial.print("MOUNT fr=");
+                        Serial.println(fs_mount_result());
+                    } else if (strncmp(line, "MBR", 3) == 0) {
+                        uint8_t mbr[512];
+                        bool ok = sd_init() && sd_read_sectors(0, mbr, 1);
+                        if (!ok) { Serial.println("MBR read FAIL"); }
+                        else {
+                            Serial.print("sig55AA=");
+                            Serial.print((mbr[510] == 0x55 && mbr[511] == 0xAA) ? "yes" : "no");
+                            Serial.print(" ptype=");
+                            Serial.print(mbr[446 + 4], HEX);
+                            Serial.print(" partLBA=");
+                            Serial.println((uint32_t)mbr[446 + 8] | ((uint32_t)mbr[446 + 9] << 8) | ((uint32_t)mbr[446 + 10] << 16) | ((uint32_t)mbr[446 + 11] << 24));
+                            Serial.print("EFI-part=");
+                            Serial.println((mbr[450] == 'E' && mbr[451] == 'F' && mbr[452] == 'I' && mbr[453] == ' ') ? "GPT" : "MBR");
+                            Serial.print("s0[0..15]=");
+                            for (int i = 0; i < 16; i++) { if (mbr[i] < 16) Serial.print("0"); Serial.print(mbr[i], HEX); Serial.print(" "); }
+                            Serial.println();
+                            Serial.print("s0[3..10]=");
+                            for (int i = 3; i < 11; i++) Serial.print((char)mbr[i]);
+                            Serial.println();
+                        }
+                    } else if (strncmp(line, "SDWRITE", 7) == 0) {
+                        uint8_t pat[512];
+                        uint8_t rd[512];
+                        for (int i = 0; i < 512; i++) pat[i] = (uint8_t)(i & 0xFF);
+                        bool w = sd_init() && sd_write_sectors(2, pat, 1);
+                        bool r = sd_init() && sd_read_sectors(2, rd, 1);
+                        bool same = w && r && (memcmp(pat, rd, 512) == 0);
+                        Serial.print("SDWRITE w="); Serial.print(w ? "OK" : "FAIL");
+                        Serial.print(" r="); Serial.print(r ? "OK" : "FAIL");
+                        Serial.print(" match="); Serial.println(same ? "yes" : "no");
+                    } else if (strncmp(line, "WRITE", 5) == 0) {
+                        static const uint8_t payload[] = "DayVault exFAT write test 0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+                        FIL f;
+                        int r;
+                        UINT wr = 0;
+                        r = fs_mount_result();
+                        if (r == FR_OK) r = f_open(&f, "/TEST1.TXT", FA_CREATE_ALWAYS | FA_WRITE);
+                        Serial.print("WRITE open_fr="); Serial.print((int)r);
+                        if (r == FR_OK) {
+                            r = f_write(&f, payload, sizeof(payload) - 1, &wr);
+                            Serial.print(" write_fr="); Serial.print((int)r);
+                            Serial.print(" wrote="); Serial.print(wr);
+                        }
+                        if (r == FR_OK) r = f_close(&f);
+                        Serial.print(" close_fr="); Serial.print((int)r);
+                        if (r == FR_OK) {
+                            r = f_open(&f, "/TEST1.TXT", FA_READ);
+                            Serial.print(" reopen_fr="); Serial.print((int)r);
+                            if (r == FR_OK) {
+                                uint8_t rbuf[80];
+                                UINT rd = 0;
+                                r = f_read(&f, rbuf, sizeof(rbuf), &rd);
+                                bool ok = (r == FR_OK && rd == sizeof(payload) - 1 && memcmp(rbuf, payload, rd) == 0);
+                                Serial.print(" read_fr="); Serial.print((int)r);
+                                Serial.print(" rd="); Serial.print(rd);
+                                Serial.print(" match="); Serial.println(ok ? "yes" : "no");
+                                f_close(&f);
+                            }
+                        }
                     } else if (strncmp(line, "SD", 2) == 0) {
                         bool ok = sd_init();
                         Serial.print("SD init="); Serial.print(ok ? "OK" : "FAIL");
