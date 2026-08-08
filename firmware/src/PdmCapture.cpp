@@ -103,7 +103,7 @@ int pdm_try_read_sample(int16_t* out)
     if ((DFSDM1_Filter1->FLTISR & DFSDM_FLTISR_REOCF) != 0u) {
         uint32_t ch = 0;
         int32_t v = HAL_DFSDM_FilterGetRegularValue(&hf, &ch);
-        *out = (int16_t)(v >> 8);
+        *out = (int16_t)v;
         samples++;
         return 1;
     }

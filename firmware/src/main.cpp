@@ -163,6 +163,35 @@ done:
     Serial.println(pdm_overruns());
 }
 
+static void sample_stats(void)
+{
+    int16_t mn = 32767, mx = -32768, prev = 0;
+    long sum = 0;
+    uint32_t count = 0, changes = 0;
+
+    ringbuf_init(&audio_rb, audio_buf, sizeof(audio_buf));
+    pdm_init(&audio_rb);
+    pdm_start();
+    uint32_t end = millis() + 3000;
+    while (millis() < end) {
+        int16_t s;
+        while (pdm_try_read_sample(&s)) {
+            if (count == 0) prev = s;
+            else if (s != prev) { changes++; prev = s; }
+            if (s < mn) mn = s;
+            if (s > mx) mx = s;
+            sum += s;
+            count++;
+        }
+    }
+    pdm_stop();
+    Serial.print("SAMP count="); Serial.print(count);
+    Serial.print(" min="); Serial.print(mn);
+    Serial.print(" max="); Serial.print(mx);
+    Serial.print(" avg="); Serial.print((int)(count ? sum / count : 0));
+    Serial.print(" changes="); Serial.println(changes);
+}
+
 static void download_file(const char* fname)
 {
     FIL f;
@@ -320,7 +349,9 @@ void loop()
                             f_closedir(&dir);
                         }
                         Serial.println("LIST done");
-                    } else                     if (strncmp(line, "DOWNLOAD ", 9) == 0) {
+                    } else                     if (strncmp(line, "SAMP", 4) == 0) {
+                        sample_stats();
+                    } else if (strncmp(line, "DOWNLOAD ", 9) == 0) {
                         download_file(line + 9);
                     } else if (strncmp(line, "REC", 3) == 0 && line[3] != ' ') {
                         rec_start();
