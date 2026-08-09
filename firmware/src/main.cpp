@@ -501,7 +501,7 @@ loop_restart:
     } else if ((millis() - last_bat_ms) >= 1000) {
         last_bat_ms = millis();
         uint16_t mv = bat_millivolts();
-        if (mv < BAT_SLEEP_MV) {
+        if (mv < BAT_SLEEP_MV && digitalRead(PIN_USB_DETECT) == LOW) {
             if (low_start == 0) low_start = millis();
             if ((millis() - low_start) > 3000) {
                 low_battery_enter_stop();                  /* returns on wake; re-checks below */
