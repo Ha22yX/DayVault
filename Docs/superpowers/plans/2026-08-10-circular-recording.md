@@ -302,16 +302,38 @@ git commit -m "feat(pdm): detect DMA ring lap and resync read position (overflow
 
 ---
 
-### Task 3: Loop integration (30 s check + rec_start pre-check) and `INFO free=`
+### Task 3: Loop integration (30 s check + rec_start pre-check), persistent mount + boot warm, `INFO free=`
 
 **Files:**
 - Modify: `firmware/src/main.cpp`
 
 **Interfaces:**
-- Consumes: `fs_make_space` (Task 1), `rec_active`, `rec_name`, `rec_start`, loop structure, `INFO` handler.
-- Produces: automatic circular deletion while recording; `INFO free=<MB>`.
+- Consumes: `fs_make_space` (Task 1), `rec_active`, `rec_name`, `rec_start`, loop structure, `INFO` handler, `fs_mount`/`fs_unmount`.
+- Produces: automatic circular deletion while recording; fast (cached) free-space reads; `INFO free=<MB>`.
 
-- [ ] **Step 1: Add the cadence state**
+Context: on this exFAT volume the first `f_getfree` after a fresh mount scans the ~4 MB allocation bitmap (~10 s). `f_getfree` caches the result in `fs->free_clst` (updated incrementally by FatFs writes/deletes), but `fs_unmount()` resets it to invalid on every `rec_stop`, so the scan would repeat every recording and block the 30 s check. Fix: **mount the volume once at boot and keep it mounted** (persistent SD), so `fs_free_bytes()` stays fast.
+
+- [ ] **Step 1: Boot-time mount + warm, before the watchdog**
+
+In `setup()` (in `main.cpp`), before `dbg_iwdg_init();`, add a one-time mount + free-space warm:
+
+```cpp
+    fs_mount();
+    fs_free_bytes();          /* ~10 s exFAT bitmap scan, caches free_clst; before IWDG so no reset risk */
+```
+
+If the SD is absent at boot, `fs_mount()` fails and this is skipped (the first recording mounts later; its first `fs_free_bytes()` will be the slow scan at `rec_start`, before audio starts — acceptable edge).
+
+- [ ] **Step 2: Stop unmounting between recordings and after downloads**
+
+Remove the `fs_unmount();` calls that break the persistent mount:
+- `rec_stop` (the final `fs_unmount();` after `f_close`).
+- `DL` download handler (`fs_unmount();` after download).
+- `DL2` download handler (both the normal-path and timeout-path `fs_unmount();`).
+
+Keep `fs_unmount()` only on error/recovery paths (e.g., failed open/write in `rec_start`). The SD is fixed and never swapped, so a permanently mounted volume is safe.
+
+- [ ] **Step 3: Add the cadence state**
 
 Near the rec statics, add:
 
@@ -320,7 +342,7 @@ Near the rec statics, add:
 static uint32_t rec_circ_last_ms = 0;
 ```
 
-- [ ] **Step 2: Pre-check in `rec_start`**
+- [ ] **Step 4: Pre-check in `rec_start`**
 
 In `rec_start`, after `rec_active = true;` add:
 
@@ -328,7 +350,7 @@ In `rec_start`, after `rec_active = true;` add:
     fs_make_space(CIRC_FREE_BYTES, rec_name + 3);   /* free room before a long recording */
 ```
 
-- [ ] **Step 3: 30 s check in `loop()`**
+- [ ] **Step 5: 30 s check in `loop()`**
 
 Inside the `if (rec_active)` block (where the checkpoint runs), add after the checkpoint call:
 
@@ -339,34 +361,34 @@ Inside the `if (rec_active)` block (where the checkpoint runs), add after the ch
         }
 ```
 
-- [ ] **Step 4: `INFO free=`**
+- [ ] **Step 6: `INFO free=`**
 
-In the `INFO` handler, before the `time=` print, add a free-space field. Ensure the FS is mounted first:
+In the `INFO` handler, after the existing `sd=` field, add a free-space field:
 
 ```cpp
                         Serial.print(" free=");
-                        fs_mount_result();
                         Serial.print((uint32_t)(fs_free_bytes() >> 20)); Serial.print("MB");
 ```
 
-Place it after the existing `sd=` field (which uses `sd_capacity_bytes()`).
+(The volume is persistently mounted after Step 1, so `fs_free_bytes()` is instant; no `fs_mount_result()` needed.)
 
-- [ ] **Step 5: Build, flash, verify**
+- [ ] **Step 7: Build, flash, verify**
 
 ```powershell
 pio run -e dayvault
 ```
 
 Flash. Verify:
-1. `INFO` shows `free=~122000MB`.
-2. `REC` then `STOP`: still records normally (pre-check + 30 s check don't disturb recording).
+1. `INFO` shows `free=~122000MB` and responds fast (no 10 s hang).
+2. `REC` then `STOP`: still records normally; then `REC` again — the second recording starts without a slow free-space scan (mount persisted).
 3. The 30 s auto-check doesn't cause issues during a longer recording (e.g., `REC`, wait ~35 s, `STOP`).
+4. `CIRC` returns fast now (cache warm).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add firmware/src/main.cpp
-git commit -m "feat(rec): periodic 30s circular free-space check while recording + rec_start pre-check + INFO free="
+git commit -m "feat(rec): persistent SD mount + boot free-space warm; periodic 30s circular check; rec_start pre-check; INFO free="
 ```
 
 ---
