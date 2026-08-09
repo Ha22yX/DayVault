@@ -8,6 +8,8 @@
 #include "PdmCapture.h"
 #include "WavFile.h"
 #include "NoiseReduction.h"
+#include "DeviceTime.h"
+#include "Battery.h"
 #include <string.h>
 
 extern "C" void SystemClock_Config(void);
@@ -436,6 +438,8 @@ void setup()
     Serial.print(" boot="); Serial.println(digitalRead(PIN_BOOT0));
 
     dbg_iwdg_init();
+    dt_init();
+    bat_init();
 
     rec_cfg.format = 1;
     rec_cfg.sample_rate = AUDIO_SAMPLE_RATE;
@@ -640,6 +644,12 @@ void loop()
                         Serial.print(" csr="); Serial.print(RCC->CSR, HEX);
                         Serial.print(" up="); Serial.println(millis());
                         g_dbg_step = 0;
+                    } else if (strncmp(line, "SETTIME ", 8) == 0) {
+                        uint32_t unix = (uint32_t)strtoul(line + 8, NULL, 10);
+                        dt_set_unix(unix);
+                        char tb[32];
+                        dt_format(tb, sizeof(tb));
+                        Serial.print("TIME set to "); Serial.println(tb);
                     } else if (strncmp(line, "INFO", 4) == 0) {
                         Serial.print("INFO usb_detect="); Serial.print(digitalRead(PIN_USB_DETECT));
                         Serial.print(" boot="); Serial.print(digitalRead(PIN_BOOT0));
@@ -650,6 +660,11 @@ void loop()
                         Serial.print(" sd=");
                         if (sd_capacity_bytes() > 0) { Serial.print(sd_capacity_bytes()); Serial.print("B"); }
                         else { Serial.print("none"); }
+                        char tb[32];
+                        dt_format(tb, sizeof(tb));
+                        Serial.print(" time="); Serial.print(tb);
+                        Serial.print(" bat="); Serial.print(bat_millivolts()); Serial.print("mV");
+                        Serial.print(" pct="); Serial.print(bat_percent());
                         Serial.println();
                     } else if (strncmp(line, "MOUNT", 5) == 0) {
                         Serial.print("MOUNT fr=");
