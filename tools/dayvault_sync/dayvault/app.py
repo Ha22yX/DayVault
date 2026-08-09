@@ -77,12 +77,14 @@ class _TrackingConn:
         return line
 
     def download_dl2(self, name: str, dest_path: str,
-                     progress_cb=None, ack_byte: bytes = b"G", idle_ms: int = 60) -> int:
+                     progress_cb=None, ack_byte: bytes = b"G", idle_ms: int = 60,
+                     interrupt=None) -> int:
         self._current = name
         if self._in_list:
             self._in_list = False
             self._flush()
-        return self._conn.download_dl2(name, dest_path, progress_cb, ack_byte, idle_ms)
+        return self._conn.download_dl2(name, dest_path, progress_cb, ack_byte, idle_ms,
+                                       interrupt)
 
     def close(self):
         self._conn.close()
@@ -128,9 +130,12 @@ class SyncThread(QThread):
                 self.download_progress.emit(self._serial, tracked.current_name(), pct)
 
             result = engine.sync_device(tracked, self._serial, self._config,
-                                        progress_cb=progress_cb, log=log)
+                                        progress_cb=progress_cb, log=log,
+                                        interrupt=lambda: self.isInterruptionRequested())
             tracked.flush()
             self.sync_finished.emit(self._serial, result)
+        except InterruptedError:
+            log.info("sync %s interrupted", self._serial)
         except Exception as e:
             log.error("sync %s failed: %s", self._serial, e)
             self.sync_error.emit(self._serial, str(e))
@@ -151,7 +156,12 @@ class DeviceMonitor(QObject):
 
     def __init__(self, parent: QObject | None = None, config: dict | None = None):
         super().__init__(parent)
-        self.config = config if config is not None else store.load_config()
+        if config is not None:
+            self.config = config
+        elif parent is not None and hasattr(parent, "config"):
+            self.config = parent.config
+        else:
+            self.config = store.load_config()
         self._known: dict[str, str] = {}           # serial -> port
         self._threads: dict[str, SyncThread] = {}  # active sync threads by serial
         self._timer = QTimer(self)
@@ -202,9 +212,13 @@ class DeviceMonitor(QObject):
         self._timer.stop()
         for t in list(self._threads.values()):
             t.requestInterruption()
-        for t in list(self._threads.values()):
-            t.wait(3000)
-        self._threads.clear()
+        for serial, t in list(self._threads.items()):
+            if not t.wait(5000):
+                log.warning("sync thread %s did not stop in 5s", serial)
+            if t.isFinished():
+                self._threads.pop(serial, None)
+            else:
+                log.warning("sync thread %s still running; keeping reference", serial)
 
 
 class MainWindow(QMainWindow):

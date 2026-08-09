@@ -66,8 +66,14 @@ class DeviceConnection:
         raise TimeoutError(f"no response to '{cmd}'")
 
     def download_dl2(self, name: str, dest_path: str,
-                     progress_cb=None, ack_byte: bytes = b"G", idle_ms: int = 60) -> int:
-        """DL2 chunked-ACK download of <name> to <dest_path>. Returns bytes written."""
+                     progress_cb=None, ack_byte: bytes = b"G", idle_ms: int = 60,
+                     interrupt=None) -> int:
+        """DL2 chunked-ACK download of <name> to <dest_path>. Returns bytes written.
+
+        `interrupt` may be a zero-arg callable; when it returns truthy the
+        download raises InterruptedError immediately (checked in the DLSTART
+        wait loop and the data/ACK loop).
+        """
         self._ser.reset_input_buffer()
         self._ser.write(f"DL2 {name}\r\n".encode())
 
@@ -76,6 +82,8 @@ class DeviceConnection:
         deadline = time.time() + 15.0
         size = -1
         while time.time() < deadline:
+            if interrupt and interrupt():
+                raise InterruptedError("download interrupted")
             chunk = self._ser.read(4096)
             if chunk:
                 buf += chunk
@@ -108,6 +116,8 @@ class DeviceConnection:
             no_data = 0
             deadline = time.time() + 300.0
             while total < size and time.time() < deadline:
+                if interrupt and interrupt():
+                    raise InterruptedError("download interrupted")
                 remain = size - total
                 n = self._ser.in_waiting
                 if n > 0:
