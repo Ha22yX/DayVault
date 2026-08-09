@@ -130,7 +130,10 @@ static void check_wav_file(void)
             if (strncmp(fno.fname, REC_DIR_STR, strlen(REC_DIR_STR)) != 0) continue;
             char* dot = strrchr(fno.fname, '.');
             if (dot == NULL || strcmp(dot + 1, REC_EXT_STR) != 0) continue;
-            if (best[0] == 0 || rec_name_cmp(fno.fname, best) > 0) strncpy(best, fno.fname, sizeof(best) - 1);
+            if (best[0] == 0 || rec_name_cmp(fno.fname, best) > 0) {
+                strncpy(best, fno.fname, sizeof(best) - 1);
+                best[sizeof(best) - 1] = 0;
+            }
         }
         f_closedir(&dir);
     }
@@ -807,7 +810,7 @@ loop_restart:
                         char* sp = strchr(line + 8, ' ');
                         uint32_t unix;
                         int32_t tz = INT32_MIN;
-                        if (sp != NULL) { *sp = 0; tz = (int32_t)strtol(sp + 1, NULL, 10); }
+                        if (sp != NULL && sp[1] != '\0') { *sp = 0; tz = (int32_t)strtol(sp + 1, NULL, 10); }
                         unix = (uint32_t)strtoul(line + 8, NULL, 10);
                         dt_set_unix(unix);
                         if (tz != INT32_MIN) dt_set_tz(tz);

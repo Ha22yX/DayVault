@@ -20,7 +20,8 @@ DayVault voice recorder firmware (STM32L452), including the audio download proto
 ## 3. Core recording behavior
 
 - **Auto recording:** the device starts/stops recording based on the USB-detect pin (PA9).
-  - USB DETACHED (pin LOW) → recording starts automatically (`REC###.WAV`).
+  - USB DETACHED (pin LOW) → recording starts automatically with a timestamped name
+    `REC-YYYYMMDD-HHMM.WAV` (see §3.1).
   - USB ATTACHED (pin HIGH) → recording stops, then enumerates as serial.
 - Files: `REC-YYYYMMDD-HHMM.WAV` (local time) when the RTC time is set; `REC###.WAV`
   (sequential numbers) fallback otherwise. 16-bit PCM WAV on exFAT microSD.
@@ -45,6 +46,7 @@ DayVault voice recorder firmware (STM32L452), including the audio download proto
 - **Timezone:** the RTC stores UTC; the `tz` offset (default +480 = UTC+8) is applied for
   filenames and the `INFO` `time=` field. Each PC sync should send `SETTIME <unix> <pc_tz_offset>`
   so the offset is refreshed on every sync (a bare `SETTZ <minutes>` can adjust it standalone).
+  If `SETTIME` **omits** the offset argument, the currently stored offset is kept.
 
 ## 4. Command list
 
@@ -54,7 +56,7 @@ DayVault voice recorder firmware (STM32L452), including the audio download proto
 | `SETTIME <unix> [tz_minutes]` | Set the RTC time from a Unix-epoch value (UTC). Optional `tz_minutes` also refreshes the stored timezone offset on every PC sync | `TIME set to 2026-08-09 20:00:00` |
 | `SETTZ <minutes>` | Set the UTC offset only, e.g. `SETTZ 480`; negative for west (stored in backup domain, default +480 = UTC+8) | `TZ set to 480` |
 | `TIME` | Raw RTC diagnostic: TR/DR/SSR/CR/ISR registers, LSE/LSION status, BKP1 (packed tz + time_set) | `TR=224023 DR=235114 SSR=F3 CR=0 ISR=37 LSE=1 LSION=1 BKP1=A5A5A5A5` |
-| `REC` | Manually start recording | `REC started seq=62` |
+| `REC` | Manually start recording | `REC started seq=1 name=0:/REC-20260809-1925.WAV` |
 | `STOP` | Manually stop recording (flushes file) | `AUTO stop err=0 bytes=158432 rate=21056` |
 | `LIST` | List files on SD root with sizes | `LIST mount=0` then `  REC062.WAV 158476` ... `LIST done` |
 | `DOWNLOAD <file>` | Raw file download (see §5.1) | `DLSTART <size>` ... `DLEND read=<n> wr=<n>` |
