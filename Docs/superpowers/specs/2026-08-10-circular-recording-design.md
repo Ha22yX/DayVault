@@ -37,6 +37,7 @@ downloads) never permanently starves or corrupts the recorded audio.
     files; among sequence files by ascending number; among timestamp files by
     lexicographic name (chronological).
   - `f_unlink` each until `fs_free_bytes() >= want_free` or no candidates remain.
+  - Return value = number of files deleted (0 if none / no candidates).
   - Errors: no candidates -> return 0; a failed `f_unlink` -> stop the current pass.
 - **Callers**: main loop (30 s cadence while `rec_active`), `rec_start` (one pre-check).
 - **Diagnostics**:
