@@ -342,7 +342,35 @@ Near the rec statics, add:
 static uint32_t rec_circ_last_ms = 0;
 ```
 
-- [ ] **Step 4: Pre-check in `rec_start`**
+- [ ] **Step 4: Never force re-mount while already mounted (critical recording-protection fix)**
+
+`f_mount(fs, "0:", 1)` (R0.12c) unconditionally clears `fs->fs_type` and re-reads the BPB
+(`ff.c:3284-3297`). The `LIST` handler (and CHECK/LTEST/MOUNT/WRITE/DL) call
+`fs_mount_result()`, so running any of them during an active recording force re-mounts the
+volume **while the recording file is open**, breaking subsequent `f_write` on it — the
+recording silently freezes at the byte count of the last good write. Fix `Fs.cpp` so an
+already-mounted volume is never re-mounted:
+
+```c
+bool fs_mount(void)
+{
+    if (fs.fs_type != 0) return true;              /* already mounted -> never re-mount */
+    return (f_mount(&fs, "0:", 1) == FR_OK);
+}
+
+int fs_mount_result(void)
+{
+    if (fs.fs_type != 0) return (int)FR_OK;        /* already mounted -> never re-mount */
+    FRESULT r = f_mount(&fs, "0:", 1);
+    return (int)r;
+}
+```
+
+`fs.fs_type` is the static `FATFS` in `Fs.cpp` (line 7). Verify on hardware: with the
+guard, `LIST` during an active recording no longer freezes it (bytes keep growing at full
+rate).
+
+- [ ] **Step 5: Pre-check in `rec_start`**
 
 In `rec_start`, after `rec_active = true;` add:
 
@@ -350,7 +378,7 @@ In `rec_start`, after `rec_active = true;` add:
     fs_make_space(CIRC_FREE_BYTES, rec_name + 3);   /* free room before a long recording */
 ```
 
-- [ ] **Step 5: 30 s check in `loop()`**
+- [ ] **Step 6: 30 s check in `loop()`**
 
 Inside the `if (rec_active)` block (where the checkpoint runs), add after the checkpoint call:
 
@@ -361,7 +389,7 @@ Inside the `if (rec_active)` block (where the checkpoint runs), add after the ch
         }
 ```
 
-- [ ] **Step 6: `INFO free=`**
+- [ ] **Step 7: `INFO free=`**
 
 In the `INFO` handler, after the existing `sd=` field, add a free-space field:
 
@@ -372,7 +400,7 @@ In the `INFO` handler, after the existing `sd=` field, add a free-space field:
 
 (The volume is persistently mounted after Step 1, so `fs_free_bytes()` is instant; no `fs_mount_result()` needed.)
 
-- [ ] **Step 7: Build, flash, verify**
+- [ ] **Step 8: Build, flash, verify**
 
 ```powershell
 pio run -e dayvault
@@ -383,12 +411,13 @@ Flash. Verify:
 2. `REC` then `STOP`: still records normally; then `REC` again — the second recording starts without a slow free-space scan (mount persisted).
 3. The 30 s auto-check doesn't cause issues during a longer recording (e.g., `REC`, wait ~35 s, `STOP`).
 4. `CIRC` returns fast now (cache warm).
+5. **`LIST` during an active recording no longer freezes it**: `REC`, then `LIST`, then wait ~5 s, then `STOP` — bytes ≈ 42 KB/s × elapsed (the pre-existing re-mount bug is fixed).
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add firmware/src/main.cpp
-git commit -m "feat(rec): persistent SD mount + boot free-space warm; periodic 30s circular check; rec_start pre-check; INFO free="
+git add firmware/src/Fs.cpp firmware/src/main.cpp
+git commit -m "feat(rec): persistent SD mount + boot free-space warm; never force re-mount while mounted (fixes LIST-freezes-recording); periodic 30s circular check; rec_start pre-check; INFO free="
 ```
 
 ---
