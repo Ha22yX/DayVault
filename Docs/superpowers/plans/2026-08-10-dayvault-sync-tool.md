@@ -42,7 +42,7 @@
 - Consumes: nothing (pure functions).
 - Produces:
   - `parse_list_output(text: str) -> list[tuple[str, int]]` — `(name, size)` for each `  <name> <size>` line.
-  - `parse_rec_name(name: str) -> dict | None` — `{"kind": "timestamp"|"seq", "base": "REC-20260809-1110"|"REC062", "seq": int|None, "duration_secs": int|None}`; `None` for non-REC files. Supports `REC-YYYYMMDD-HHMM`, `_n` collision suffix, `_MmSs`/`_HhMmSs` duration, and legacy `REC###`.
+  - `parse_rec_name(name: str) -> dict | None` — `{"kind": "timestamp"|"seq", "timestamp": "YYYY-MM-DD HH:MM", "collision": int, "duration_secs": int|None}` for timestamp files; `{"kind": "seq", "seq": int, "duration_secs": None}` for legacy `REC###`; `None` for non-REC files. (Actual keys; `base` is not returned.)
   - `local_tz_offset_minutes(now: datetime | None = None) -> int` — UTC offset in minutes (e.g. +480 for UTC+8).
 
 - [ ] **Step 1: Create the package and `proto.py`**
