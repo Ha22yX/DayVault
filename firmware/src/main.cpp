@@ -708,6 +708,15 @@ loop_restart:
                         char tb[32];
                         dt_format(tb, sizeof(tb));
                         Serial.print("TIME set to "); Serial.println(tb);
+                    } else if (strncmp(line, "TIME", 4) == 0) {
+                        Serial.print("TR="); Serial.print(RTC->TR, HEX);
+                        Serial.print(" DR="); Serial.print(RTC->DR, HEX);
+                        Serial.print(" SSR="); Serial.print(RTC->SSR, HEX);
+                        Serial.print(" CR="); Serial.print(RTC->CR, HEX);
+                        Serial.print(" ISR="); Serial.print(RTC->ISR, HEX);
+                        Serial.print(" LSE="); Serial.print((RCC->BDCR & RCC_BDCR_LSERDY) ? 1 : 0);
+                        Serial.print(" LSION="); Serial.print((RCC->CSR & RCC_CSR_LSION) ? 1 : 0);
+                        Serial.println();
                     } else if (strncmp(line, "INFO", 4) == 0) {
                         Serial.print("INFO usb_detect="); Serial.print(digitalRead(PIN_USB_DETECT));
                         Serial.print(" boot="); Serial.print(digitalRead(PIN_BOOT0));
