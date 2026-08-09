@@ -12,7 +12,7 @@
 #define _USE_TRIM 0
 #define _CODE_PAGE 850
 #define _USE_LFN 2
-#define _MAX_LFN 255
+#define _MAX_LFN 40
 #define _LFN_UNICODE 0
 #define _STRF_ENCODE 3
 #define _FS_RPATH 0

@@ -152,6 +152,36 @@ static void check_wav_file(void)
     Serial.println("CHECK done");
 }
 
+static void lfn_bringup_test(void)
+{
+    FIL f;
+    DIR dir;
+    FILINFO fno;
+    UINT wr = 0;
+    const char* n1 = "0:/LTEST-20260809-1110_5m32s.WAV";
+    const char* n2 = "0:/LTEST-20260809-1110_5m33s.WAV";
+    Serial.print("LTEST mount="); Serial.println(fs_mount_result());
+    FRESULT r = f_open(&f, n1, FA_CREATE_NEW | FA_WRITE);
+    Serial.print(" create_fr="); Serial.print((int)r);
+    if (r == FR_OK) {
+        r = f_write(&f, "LTEST-DAYVAULT", 14, &wr);
+        Serial.print(" write_fr="); Serial.print((int)r);
+        f_close(&f);
+    }
+    int found = 0;
+    if (f_opendir(&dir, "0:/") == FR_OK) {
+        while (f_readdir(&dir, &fno) == FR_OK && fno.fname[0]) {
+            if (strcmp(fno.fname, "LTEST-20260809-1110_5m32s.WAV") == 0) found = 1;
+        }
+        f_closedir(&dir);
+    }
+    Serial.print(" readdir_found="); Serial.println(found);
+    r = f_rename(n1, n2);
+    Serial.print(" rename_fr="); Serial.print((int)r);
+    r = f_unlink(n2);
+    Serial.print(" unlink_fr="); Serial.println((int)r);
+}
+
 static void record_test(int seconds)
 {
     WavConfig cfg;
@@ -592,6 +622,8 @@ loop_restart:
                         rec_stop();
                     } else if (strncmp(line, "CHECK", 5) == 0) {
                         check_wav_file();
+                    } else if (strncmp(line, "LTEST", 5) == 0) {
+                        lfn_bringup_test();
                     } else if (strncmp(line, "CAPT", 4) == 0) {
                         record_test(5);
                     } else if (strncmp(line, "DFU", 3) == 0) {
