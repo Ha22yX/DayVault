@@ -140,3 +140,21 @@ void dt_format(char* buf, size_t len)
     snprintf(buf, len, "%04d-%02u-%02u %02u:%02u:%02u",
              y, m, d, sod / 3600u, (sod / 60u) % 60u, sod % 60u);
 }
+
+void dt_set_wake(uint16_t seconds)
+{
+    uint32_t cnt = (uint32_t)seconds > 0u ? (uint32_t)seconds - 1u : 0u;
+    HAL_RTCEx_SetWakeUpTimer_IT(&s_hrtc, cnt, RTC_WAKEUPCLOCK_CK_SPRE_16BITS);
+    HAL_NVIC_SetPriority(RTC_WKUP_IRQn, 3, 0);
+    HAL_NVIC_EnableIRQ(RTC_WKUP_IRQn);
+}
+
+extern "C" void RTC_WKUP_IRQHandler(void)
+{
+    HAL_RTCEx_WakeUpTimerIRQHandler(&s_hrtc);
+}
+
+void HAL_RTCEx_WakeUpTimerEventCallback(RTC_HandleTypeDef* hrtc)
+{
+    (void)hrtc;   /* wake reason: periodic re-check */
+}

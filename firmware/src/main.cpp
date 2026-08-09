@@ -422,6 +422,27 @@ static void rec_poll_samples(void)
     }
 }
 
+static void exti_usb_wake_enable(void)
+{
+    SYSCFG->EXTICR[2] |= SYSCFG_EXTICR3_EXTI9_PA;   /* PA9 -> EXTI9 */
+    EXTI->IMR1 |= EXTI_IMR1_IM9;
+    EXTI->RTSR1 |= EXTI_RTSR1_RT9;                  /* rising edge = USB attach */
+    EXTI->FTSR1 |= EXTI_FTSR1_FT9;
+    HAL_NVIC_SetPriority(EXTI9_5_IRQn, 3, 0);
+    HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+}
+
+static void low_battery_enter_stop(void)
+{
+    dt_set_wake(4);                       /* wake every 4 s to refresh IWDG + re-check */
+    dbg_iwdg_kick();                      /* refresh right before sleeping */
+    HAL_SuspendTick();
+    HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
+    /* --- resumed (RTC wake or USB EXTI) --- */
+    SystemClock_Config();                 /* PLL off in STOP -> restore 80 MHz */
+    HAL_ResumeTick();
+}
+
 void setup()
 {
     SystemClock_Config();
@@ -440,6 +461,7 @@ void setup()
     dbg_iwdg_init();
     dt_init();
     bat_init();
+    exti_usb_wake_enable();
 
     rec_cfg.format = 1;
     rec_cfg.sample_rate = AUDIO_SAMPLE_RATE;
@@ -449,12 +471,39 @@ void setup()
     rec_cfg.byte_rate = rec_cfg.sample_rate * rec_cfg.block_align;
 }
 
+#define BAT_SLEEP_MV   3000u
+#define BAT_RESUME_MV  3300u
+
 void loop()
 {
     static uint32_t last_tick = 0;
     static int last_usb = -1;
+    static int usb_pending = -1;
+    static uint32_t usb_pending_since = 0;
+    static uint8_t bat_asleep = 0;
+    static uint32_t low_start = 0;
+    static uint32_t last_bat_ms = 0;
 
+loop_restart:
     dbg_iwdg_kick();
+
+    if ((millis() - last_bat_ms) >= 1000) {
+        last_bat_ms = millis();
+        uint16_t mv = bat_millivolts();
+        if (bat_asleep) {
+            if (mv >= BAT_RESUME_MV) bat_asleep = 0;     /* charged (e.g. USB) -> resume */
+        } else if (mv < BAT_SLEEP_MV) {
+            if (low_start == 0) low_start = millis();
+            if ((millis() - low_start) > 3000) {
+                low_battery_enter_stop();                  /* returns on wake; re-checks below */
+                bat_asleep = 1;                            /* latched until > BAT_RESUME_MV */
+                low_start = 0;
+                goto loop_restart;                         /* skip remaining checks this pass */
+            }
+        } else {
+            low_start = 0;
+        }
+    }
 
     if (Serial.available()) {
         static char line[64];
@@ -744,7 +793,7 @@ void loop()
         }
     }
 
-    /* USB detect -> auto recording */
+    /* USB detect -> auto recording (debounced 100 ms) */
     int usb = digitalRead(PIN_USB_DETECT);
     if (last_usb < 0) {
         last_usb = usb;
@@ -752,11 +801,12 @@ void loop()
     }
     if (usb != last_usb) {
         last_usb = usb;
-        if (usb == LOW) {
-            rec_start();
-        } else {
-            rec_stop();
-        }
+        usb_pending = usb;
+        usb_pending_since = millis();
+    }
+    if (usb_pending >= 0 && (millis() - usb_pending_since) >= 100) {
+        if (usb_pending == 0) rec_start(); else rec_stop();
+        usb_pending = -1;
     }
     if (rec_active) rec_poll_samples();
 }
