@@ -69,13 +69,13 @@ Rendering:
 
 ### 3. LFN bring-up (mandatory first step)
 
-- Determine the ffconf actually used by the build (`.pio` staged lib / build flags;
-  the lib header and the compiled object disagree today).
-- Preferred fix (Plan A): implement `ff_memalloc`/`ff_memfree` as thin `malloc`/`free`
-  wrappers, keeping `_USE_LFN 2`. FatFs is only called in loop context (never ISR), so
-  dynamic allocation is safe.
-- Fallback (Plan B): switch to `_USE_LFN 1` with `_MAX_LFN` reduced to ~40 (names we
-  generate are ~30 chars max), static buffer, no dynamic allocation.
+- FatFs is **R0.12c**; the current config `_USE_LFN 2` means LFN with a **dynamic
+  working buffer on the stack** (`WCHAR lbuf[_MAX_LFN+1]` local array; `ff_memalloc`
+  only applies to `_USE_LFN 3`, so none needs to be implemented). Long names are
+  therefore already supported by the config — verify empirically.
+- Because `_MAX_LFN 255` + `_FS_EXFAT 1` puts ~1.1 KB on the stack per LFN operation
+  (512 B `lbuf` + 608 B `dirbuf`), reduce `_MAX_LFN` to **40** (our longest generated
+  name is ~31 chars) to cut that to ~242 B and keep stack headroom.
 - Empirically verify on the SD card: create `REC-20260809-1110_5m32s.WAV`, see it in
   `f_readdir`, rename it with `f_rename`.
 

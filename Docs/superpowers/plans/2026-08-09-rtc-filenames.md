@@ -4,7 +4,7 @@
 
 **Goal:** Name recordings by local start time + duration (e.g. `REC-20260809-1110_5m32s.WAV`), crash-safe against power loss, with PC-synced timezone and FatFs long-filename support.
 
-**Architecture:** Extend `DeviceTime` with a backup-domain UTC-offset (`BKP1R`) + `time_set` flag and local-time rendering. Rework `rec_start`/`rec_stop` in `main.cpp` to create timestamp names (with `_n` collision retry and sequence-name fallback when time is unset) and rename on stop to include duration. Add periodic WAV-header + `f_sync` checkpointing (~1 s) so a power loss leaves a playable, correctly-sized file, and finalize the recording cleanly before low-battery STOP. Bring up FatFs LFN (`_USE_LFN 2` requires `ff_memalloc`/`ff_memfree`) first.
+**Architecture:** Extend `DeviceTime` with a backup-domain UTC-offset (`BKP1R`) + `time_set` flag and local-time rendering. Rework `rec_start`/`rec_stop` in `main.cpp` to create timestamp names (with `_n` collision retry and sequence-name fallback when time is unset) and rename on stop to include duration. Add periodic WAV-header + `f_sync` checkpointing (~1 s) so a power loss leaves a playable, correctly-sized file, and finalize the recording cleanly before low-battery STOP. Verify FatFs LFN long names first and trim `_MAX_LFN` for stack headroom.
 
 **Tech Stack:** STM32L452RC, STM32duino Arduino core, FatFs (`lib/FatFs`, `_USE_LFN 2`), PDM/DFSDM audio, PlatformIO (`pio run -e dayvault`).
 
@@ -14,7 +14,7 @@
 - USB VID must stay ST `0x0483`.
 - The RTC calendar stores **UTC**; the UTC offset is applied **only at render time** (filenames, `INFO`). `dt_get_unix` stays true UTC.
 - Recording must never be blocked or lose data because of naming: long-name failure falls back to sequence names; `f_rename` failure keeps the start-time name.
-- FatFs `ffconf.h` `_USE_LFN 2` is unchanged; long filenames must actually work.
+- FatFs `ffconf.h` `_USE_LFN 2` is unchanged; `_MAX_LFN` reduced to 40; long filenames must actually work.
 - Default UTC offset = `+480` minutes (UTC+8, current dev PC); default `time_set` = 0.
 - Every command/behavior change is documented in `Docs/Serial-Command-Reference.md`.
 - Audio pipeline (PDM/DFSDM, `pdm_*`, `wav_build_header`) and low-battery sleep logic (hysteresis 3.0/3.3 V, 4 s RTC wake, IWDG kicks) are untouched except where the plan says.
@@ -23,8 +23,8 @@
 
 ## File Structure
 
-- `firmware/lib/FatFs/ffconf.h` — **unchanged** (`_USE_LFN 2`).
-- `firmware/src/Fs.cpp` — add `ff_memalloc`/`ff_memfree` definitions (LFN dynamic allocation).
+- `firmware/lib/FatFs/ffconf.h` — `_MAX_LFN` 255 → 40 (stack headroom).
+- `firmware/src/Fs.cpp` — unchanged (no `ff_memalloc` needed; FatFs R0.12c uses stack buffers for `_USE_LFN 2`).
 - `firmware/src/DeviceTime.h` — declare `dt_time_is_set`, `dt_get_tz`, `dt_set_tz`, `dt_format_local`, `dt_format_stem`.
 - `firmware/src/DeviceTime.cpp` — implement the above + `time_set` set in `dt_set_unix`, `BKP1R` default init, `dt_format_local`/`dt_format_stem` rendering.
 - `firmware/src/main.cpp` — timestamp filenames in `rec_start`/`rec_stop`, collision retry, sequence fallback, rename-with-duration, checkpointing, sleep-entry finalize, `LTEST` command, `SETTZ` command, `SETTIME` offset arg, `INFO`/`TIME`/`CHECK`/`REC` message updates.
@@ -34,42 +34,42 @@ Build: `pio run -e dayvault` (run in `firmware/`). Flash: serial `DFU` command, 
 
 ---
 
-### Task 1: FatFs LFN bring-up (`ff_memalloc`/`ff_memfree` + `LTEST` command)
+### Task 1: FatFs LFN verify + stack headroom + `LTEST` command
 
 **Files:**
-- Modify: `firmware/src/Fs.cpp`
+- Modify: `firmware/lib/FatFs/ffconf.h` (reduce `_MAX_LFN` 255 → 40)
 - Modify: `firmware/src/main.cpp` (add `LTEST` handler + `lfn_bringup_test()`)
-- Verify: build map/ELF symbols, SD card behavior
+- Verify: SD card long-name behavior
 
 **Interfaces:**
 - Consumes: existing `fs_mount_result()`, `f_open`, `f_write`, `f_close`, `f_opendir`, `f_readdir`, `f_rename`, `f_unlink` (all FatFs, already used).
-- Produces: `ff_memalloc`/`ff_memfree` (C linkage, needed by every LFN directory/rename operation); serial command `LTEST`.
+- Produces: serial command `LTEST` — proves long-name create / readdir / rename / delete work.
 
-- [ ] **Step 1: Confirm the stale-object situation**
+Context: FatFs is R0.12c. `_USE_LFN 2` = LFN with a **dynamic working buffer on the stack** (`WCHAR lbuf[_MAX_LFN+1]` local array + exFAT `dirbuf`); `ff_memalloc` applies only to `_USE_LFN 3`, so **no allocation wrappers are needed**. The long-name mechanism already exists; this task verifies it and trims the oversized stack buffer.
 
-The lib header says `_USE_LFN 2` (dynamic, needs `ff_memalloc`), but the current `firmware.elf` defines `ff_convert` yet references no `ff_memalloc` — likely a stale build compiled with LFN effectively off/static. Do a clean rebuild and re-check:
+- [ ] **Step 1: Reduce `_MAX_LFN` to 40**
+
+In `firmware/lib/FatFs/ffconf.h`, change line 15 from:
+
+```c
+#define _MAX_LFN 255
+```
+
+to:
+
+```c
+#define _MAX_LFN 40
+```
+
+Rationale: with `_FS_EXFAT 1`, `_USE_LFN 2` puts `lbuf[256]` (512 B) + `dirbuf[608 B]` on the stack per LFN directory/rename call. `_MAX_LFN 40` → `lbuf[41]` (82 B) + `dirbuf[160 B]` ≈ 242 B, plenty for our longest generated name (~31 chars: `REC-20260809-1110_2_1h23m45s.WAV`). `ffconf.h` requires `_MAX_LFN >= 12`.
+
+- [ ] **Step 2: Rebuild and confirm no `ff_memalloc` is involved**
 
 ```powershell
-pio run -t clean
 pio run -e dayvault
-$nm = Get-ChildItem "C:\Users\Administrator\.platformio\packages" -Recurse -Filter "arm-none-eabi-nm.exe" | Select-Object -First 1
-& $nm.FullName --undefined-only "C:\Users\Administrator\Desktop\DayVault\firmware\.pio\build\dayvault\firmware.elf" 2>$null | Select-String "ff_memalloc|ff_memfree"
 ```
 
-Expected: after the clean build, `ff_memalloc`/`ff_memfree` appear as **undefined** symbols (LFN=2 code paths call them). If they do NOT appear, report back — the plan needs the actual ffconf used. Do not proceed past this step without them referenced.
-
-- [ ] **Step 2: Implement `ff_memalloc`/`ff_memfree`**
-
-In `firmware/src/Fs.cpp`, add near the top (after the existing includes):
-
-```cpp
-#include <stdlib.h>
-
-extern "C" void* ff_memalloc (UINT msize) { return malloc(msize); }
-extern "C" void ff_memfree (void* mblock) { free(mblock); }
-```
-
-Notes: `UINT` comes from `ff.h` (already included). `extern "C"` is required because `ff.h` declares these prototypes as C functions and `Fs.cpp` is compiled as C++. `_USE_LFN 2` stays; no change to `ffconf.h`.
+Expected: build succeeds. `_MAX_LFN 40` compiles (`ffconf.h` validates `12..255`). No `ff_memalloc`/`ff_memfree` symbols are expected in `libFatFs.a` (they belong to `_USE_LFN 3`) — that is normal.
 
 - [ ] **Step 3: Add the `LTEST` diagnostic command**
 
@@ -115,15 +115,7 @@ Add the command handler in the serial dispatch chain (next to `LIST`, around `ma
 }
 ```
 
-- [ ] **Step 4: Build and check linkage**
-
-```powershell
-pio run -e dayvault
-```
-
-Expected: build succeeds. `ff_memalloc`/`ff_memfree` are now **defined** (nm `--defined-only` shows them).
-
-- [ ] **Step 5: Flash and verify LFN works on the SD card**
+- [ ] **Step 4: Flash and verify LFN works on the SD card**
 
 Flash (serial `DFU` command or BOOT+RST). Then send `LTEST` over COM9 @115200 and confirm:
 
@@ -131,13 +123,13 @@ Flash (serial `DFU` command or BOOT+RST). Then send `LTEST` over COM9 @115200 an
 LTEST mount=0 create_fr=0 write_fr=0 readdir_found=1 rename_fr=0 unlink_fr=0
 ```
 
-`create_fr=0`, `readdir_found=1`, `rename_fr=0`, `unlink_fr=0` prove long-name create / readdir / rename / delete all work. Run `LIST` to confirm the test file is gone.
+`create_fr=0`, `readdir_found=1`, `rename_fr=0`, `unlink_fr=0` prove long-name create / readdir / rename / delete all work with the stack-buffer LFN config. Run `LIST` to confirm the test file is gone.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add firmware/src/Fs.cpp firmware/src/main.cpp
-git commit -m "feat(fs): implement ff_memalloc/ff_memfree for FatFs LFN=2 and add LTEST long-name diagnostic"
+git add firmware/lib/FatFs/ffconf.h firmware/src/main.cpp
+git commit -m "feat(fs): verify FatFs LFN long names, trim _MAX_LFN 255->40 for stack headroom, add LTEST diagnostic"
 ```
 
 ---
