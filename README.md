@@ -7,6 +7,7 @@
 <p align="center">
   <a href="README.zh-CN.md">简体中文</a> &middot;
   <a href="Docs/README.md">Hardware docs</a> &middot;
+  <a href="Docs/Serial-Command-Reference.md">Serial command reference</a> &middot;
   <a href="Docs/06-Known-Issues.md">Known issues</a> &middot;
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
