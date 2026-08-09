@@ -53,19 +53,27 @@ def sync_device(conn, serial: str, config: dict,
         size = dict(remote).get(name, 0)
         part = folder / (name + ".part")
         final = folder / name
-        try:
-            n = conn.download_dl2(name, str(part), progress_cb=progress_cb)
-            if n != size:
-                raise IOError(f"size mismatch {n} != {size}")
-            part.replace(final)
+        ok = False
+        for attempt in range(3):
+            if attempt:
+                time.sleep(0.25)
+            try:
+                n = conn.download_dl2(name, str(part), progress_cb=progress_cb)
+                if n != size:
+                    raise IOError(f"size mismatch {n} != {size}")
+                part.replace(final)
+                ok = True
+                break
+            except Exception as e:
+                log.warning("download %s attempt %d failed: %s", name, attempt + 1, e)
+                try:
+                    part.unlink(missing_ok=True)
+                except Exception:
+                    pass
+        if ok:
             state[name] = size
             store.save_state(serial, state)
             result["downloaded"].append(name)
-        except Exception as e:
-            log.error("download %s failed: %s", name, e)
+        else:
             result["failed"].append(name)
-            try:
-                part.unlink(missing_ok=True)
-            except Exception:
-                pass
     return result
