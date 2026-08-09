@@ -9,11 +9,13 @@ static FATFS fs;
 
 bool fs_mount(void)
 {
+    if (fs.fs_type != 0) return true;              /* already mounted -> never re-mount */
     return (f_mount(&fs, "0:", 1) == FR_OK);
 }
 
 int fs_mount_result(void)
 {
+    if (fs.fs_type != 0) return (int)FR_OK;        /* already mounted -> never re-mount */
     FRESULT r = f_mount(&fs, "0:", 1);
     return (int)r;
 }

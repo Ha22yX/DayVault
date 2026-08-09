@@ -313,7 +313,6 @@ static void download_file(const char* fname)
         total_written += (uint32_t)Serial.write(buf, rd);
     }
     f_close(&f);
-    fs_unmount();
     Serial.print("DLEND read="); Serial.print(total_read);
     Serial.print(" wr="); Serial.println(total_written);
 }
@@ -340,12 +339,11 @@ static void download_file2(const char* fname)
         uint32_t t0 = millis();
         while (!Serial.available()) {
             dbg_iwdg_kick();
-            if ((millis() - t0) > 5000) { f_close(&f); fs_unmount(); Serial.println("DL2 ACK timeout"); return; }
+            if ((millis() - t0) > 5000) { f_close(&f); Serial.println("DL2 ACK timeout"); return; }
         }
         while (Serial.available()) Serial.read();
     }
     f_close(&f);
-    fs_unmount();
     Serial.print("DLEND read="); Serial.println(total);
 }
 
@@ -371,6 +369,8 @@ static FIL rec_file;
 static bool rec_active = false;
 static uint32_t rec_data_bytes = 0;
 #define REC_SYNC_INTERVAL_MS 1000u
+#define REC_CIRC_INTERVAL_MS 30000u
+static uint32_t rec_circ_last_ms = 0;
 static uint32_t rec_seq = 1;
 static uint32_t rec_start_ms = 0;
 static uint32_t rec_last_sync_ms = 0;
@@ -442,6 +442,7 @@ static void rec_start(void)
     rec_start_ms = millis();
     rec_last_sync_ms = millis();
     rec_active = true;
+    fs_make_space(CIRC_FREE_BYTES, rec_name + 3);   /* free room before a long recording */
 }
 
 static int rec_read_sample(int16_t* s);
@@ -481,7 +482,6 @@ static void rec_stop(void)
         }
     }
     f_close(&rec_file);
-    fs_unmount();
     rec_active = false;
     Serial.print("AUTO stop err="); Serial.print(rec_err);
     Serial.print(" bytes="); Serial.print(rec_data_bytes);
@@ -559,6 +559,9 @@ void setup()
     dbg_report_last_step();
     Serial.print("usb_detect="); Serial.print(digitalRead(PIN_USB_DETECT));
     Serial.print(" boot="); Serial.println(digitalRead(PIN_BOOT0));
+
+    fs_mount();
+    fs_free_bytes();          /* ~10 s exFAT bitmap scan, caches free_clst; before IWDG so no reset risk */
 
     dbg_iwdg_init();
     dt_init();
@@ -853,6 +856,8 @@ loop_restart:
                         Serial.print(" sd=");
                         if (sd_capacity_bytes() > 0) { Serial.print(sd_capacity_bytes()); Serial.print("B"); }
                         else { Serial.print("none"); }
+                        Serial.print(" free=");
+                        Serial.print((uint32_t)(fs_free_bytes() >> 20)); Serial.print("MB");
                         char tb[32];
                         dt_format_local(tb, sizeof(tb));
                         Serial.print(" time="); Serial.print(tb);
@@ -957,5 +962,9 @@ loop_restart:
     if (rec_active) {
         rec_poll_samples();
         if ((millis() - rec_last_sync_ms) >= REC_SYNC_INTERVAL_MS) rec_checkpoint();
+        if ((millis() - rec_circ_last_ms) >= REC_CIRC_INTERVAL_MS) {
+            rec_circ_last_ms = millis();
+            fs_make_space(CIRC_FREE_BYTES, rec_name + 3);
+        }
     }
 }
