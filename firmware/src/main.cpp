@@ -420,8 +420,6 @@ static void rec_poll_samples(void)
     }
 }
 
-
-
 void setup()
 {
     SystemClock_Config();
@@ -451,6 +449,8 @@ void loop()
 {
     static uint32_t last_tick = 0;
     static int last_usb = -1;
+
+    dbg_iwdg_kick();
 
     if (Serial.available()) {
         static char line[64];
