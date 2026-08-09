@@ -25,6 +25,9 @@ DayVault voice recorder firmware (STM32L452), including the audio download proto
   - USB ATTACHED (pin HIGH) → recording stops, then enumerates as serial.
 - Files: `REC-YYYYMMDD-HHMM.WAV` (local time) when the RTC time is set; `REC###.WAV`
   (sequential numbers) fallback otherwise. 16-bit PCM WAV on exFAT microSD.
+- **Persistent SD mount:** the SD volume is mounted once at boot and stays mounted across
+  recordings (no unmount between recordings). Recording, `INFO free=`, and the circular
+  deletion (`CIRC`/auto) all operate on the live volume.
 - For full timestamped-naming details see §3.1 below.
 - Manual control is possible via `REC` / `STOP`.
 
@@ -52,12 +55,14 @@ DayVault voice recorder firmware (STM32L452), including the audio download proto
 
 | Command | Description | Example response |
 |---|---|---|
-| `INFO` | Status dump: usb_detect, boot(BOOT0), up(millis), sysclk, ckin_div, fltcr1, sd capacity, time (**local**), bat, pct, tz, time_set | `INFO usb_detect=1 boot=0 up=12345 sysclk=80000000 ckin_div=0 fltcr1=0 sd=125844324352B time=2026-08-09 20:00:00 bat=3850mV pct=71 tz=480 time_set=1` |
+| `INFO` | Status dump: usb_detect, boot(BOOT0), up(millis), sysclk, ckin_div, fltcr1, sd capacity, free (MB), time (**local**), bat, pct, tz, time_set | `INFO usb_detect=1 boot=0 up=12345 sysclk=80000000 ckin_div=0 fltcr1=0 sd=125844324352B free=119990MB time=2026-08-09 20:00:00 bat=3850mV pct=71 tz=480 time_set=1` |
 | `SETTIME <unix> [tz_minutes]` | Set the RTC time from a Unix-epoch value (UTC). Optional `tz_minutes` also refreshes the stored timezone offset on every PC sync | `TIME set to 2026-08-09 20:00:00` |
 | `SETTZ <minutes>` | Set the UTC offset only, e.g. `SETTZ 480`; negative for west (stored in backup domain, default +480 = UTC+8) | `TZ set to 480` |
 | `TIME` | Raw RTC diagnostic: TR/DR/SSR/CR/ISR registers, LSE/LSION status, BKP1 (packed tz + time_set) | `TR=224023 DR=235114 SSR=F3 CR=0 ISR=37 LSE=1 LSION=1 BKP1=A5A5A5A5` |
 | `REC` | Manually start recording | `REC started seq=1 name=0:/REC-20260809-1925.WAV` |
 | `STOP` | Manually stop recording (flushes file) | `AUTO stop err=0 bytes=158432 rate=21056` |
+| `CIRC` | Report free space, then run one delete-oldest pass (see §4.1) | `CIRC free_before=119990MB deleted=0 free_after=119990MB` |
+| `DELOLDEST` | Delete the single oldest completed recording (see §4.1) | `DELOLDEST deleted=1` |
 | `LIST` | List files on SD root with sizes | `LIST mount=0` then `  REC062.WAV 158476` ... `LIST done` |
 | `DOWNLOAD <file>` | Raw file download (see §5.1) | `DLSTART <size>` ... `DLEND read=<n> wr=<n>` |
 | `DL2 <file>` | Chunked ACK download — **preferred** (see §5.2) | `DLSTART <size>` ... `DLEND read=<n>` |
@@ -73,6 +78,22 @@ DayVault voice recorder firmware (STM32L452), including the audio download proto
 | `RAW` | Raw filter-output diagnostic | `RAW rms=... zcr=... peak=...` |
 | `ITST` / `SAMP` | Interrupt/polling diagnostics | — |
 | `MBR` / `WRITE` / `SDWRITE` | SD diagnostic read/write tests | — |
+
+### 4.1 Circular recording (delete-oldest)
+
+While recording, free space on the SD volume is checked every **30 s** and again at record
+start. When free space drops below **64 MB**, the oldest **completed** recordings are deleted
+until free space is back to >= 64 MB. Deletion order: sequence-name `REC###.WAV` files first,
+then timestamp-named files oldest-first. The in-progress recording file is never deleted.
+This requires the SD volume to be persistently mounted at boot (§3).
+
+- `CIRC` runs one free-space check + delete pass manually: `CIRC free_before=119990MB
+  deleted=0 free_after=119990MB`.
+- `DELOLDEST` deletes the single oldest completed recording:
+  `DELOLDEST deleted=1` (`deleted=0` when nothing was removed).
+- **PDM overflow self-recovery:** after a long loop block the audio read path (`pdm_dma_read`)
+  resyncs and resumes at full rate automatically. A short audio gap may occur, but the
+  recording file remains valid.
 
 ## 5. Audio download protocol
 
