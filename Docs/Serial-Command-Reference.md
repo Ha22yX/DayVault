@@ -22,16 +22,38 @@ DayVault voice recorder firmware (STM32L452), including the audio download proto
 - **Auto recording:** the device starts/stops recording based on the USB-detect pin (PA9).
   - USB DETACHED (pin LOW) → recording starts automatically (`REC###.WAV`).
   - USB ATTACHED (pin HIGH) → recording stops, then enumerates as serial.
-- Files: `REC###.WAV` (sequential numbers), 16-bit PCM WAV on exFAT microSD.
+- Files: `REC-YYYYMMDD-HHMM.WAV` (local time) when the RTC time is set; `REC###.WAV`
+  (sequential numbers) fallback otherwise. 16-bit PCM WAV on exFAT microSD.
+- For full timestamped-naming details see §3.1 below.
 - Manual control is possible via `REC` / `STOP`.
+
+### 3.1 Recording filenames and timezone
+
+- **Timestamped names** (time set, `time_set=1`): a recording starts as `REC-YYYYMMDD-HHMM.WAV`,
+  named from **local** time at minute precision (e.g. `REC-20260809-2015.WAV`). On `STOP` the
+  file is renamed to include the actual duration: `REC-YYYYMMDD-HHMM_MmSs.WAV` for recordings
+  under an hour, or `REC-YYYYMMDD-HHMM_HhMmSs.WAV` for an hour or more
+  (e.g. `REC-20260809-2015_5m32s.WAV`, `REC-20260809-2015_1h04m03s.WAV`).
+- **Same-minute collision:** if a `REC-YYYYMMDD-HHMM.WAV` name already exists, a `_1`..`_9`
+  suffix is appended at start time (`REC-20260809-2015_1.WAV`); the suffix is kept in the
+  final renamed name before the duration (`REC-20260809-2015_1_5m32s.WAV`).
+- **Time not set** (`time_set=0` — fresh board or backup-domain loss): falls back to legacy
+  `REC###.WAV` sequence names (`REC%03u.WAV`) until the first `SETTIME`.
+- **Power-loss recovery:** the WAV header and FAT size are checkpointed ~1/s (`f_sync`), so a
+  power loss leaves a playable file with the start-time name (no duration suffix). On low
+  battery the device finalizes the recording cleanly before entering STOP sleep.
+- **Timezone:** the RTC stores UTC; the `tz` offset (default +480 = UTC+8) is applied for
+  filenames and the `INFO` `time=` field. Each PC sync should send `SETTIME <unix> <pc_tz_offset>`
+  so the offset is refreshed on every sync (a bare `SETTZ <minutes>` can adjust it standalone).
 
 ## 4. Command list
 
 | Command | Description | Example response |
 |---|---|---|
-| `INFO` | Status dump: usb_detect, boot(BOOT0), up(millis), sysclk, ckin_div, fltcr1, sd capacity, time, bat, pct | `INFO usb_detect=1 boot=0 up=12345 sysclk=80000000 ckin_div=0 fltcr1=0 sd=125844324352B time=2026-08-09 12:00:00 bat=3850mV pct=71` |
-| `SETTIME <unix>` | Set the RTC time from a Unix-epoch value (UTC) | `TIME set to 2026-08-09 12:00:00` |
-| `TIME` | Raw RTC diagnostic: TR/DR/SSR/CR/ISR registers + LSE status | `TR=224023 DR=235114 SSR=F3 CR=0 ISR=37 LSE=1` |
+| `INFO` | Status dump: usb_detect, boot(BOOT0), up(millis), sysclk, ckin_div, fltcr1, sd capacity, time (**local**), bat, pct, tz, time_set | `INFO usb_detect=1 boot=0 up=12345 sysclk=80000000 ckin_div=0 fltcr1=0 sd=125844324352B time=2026-08-09 20:00:00 bat=3850mV pct=71 tz=480 time_set=1` |
+| `SETTIME <unix> [tz_minutes]` | Set the RTC time from a Unix-epoch value (UTC). Optional `tz_minutes` also refreshes the stored timezone offset on every PC sync | `TIME set to 2026-08-09 20:00:00` |
+| `SETTZ <minutes>` | Set the UTC offset only, e.g. `SETTZ 480`; negative for west (stored in backup domain, default +480 = UTC+8) | `TZ set to 480` |
+| `TIME` | Raw RTC diagnostic: TR/DR/SSR/CR/ISR registers, LSE/LSION status, BKP1 (packed tz + time_set) | `TR=224023 DR=235114 SSR=F3 CR=0 ISR=37 LSE=1 LSION=1 BKP1=A5A5A5A5` |
 | `REC` | Manually start recording | `REC started seq=62` |
 | `STOP` | Manually stop recording (flushes file) | `AUTO stop err=0 bytes=158432 rate=21056` |
 | `LIST` | List files on SD root with sizes | `LIST mount=0` then `  REC062.WAV 158476` ... `LIST done` |
@@ -39,6 +61,7 @@ DayVault voice recorder firmware (STM32L452), including the audio download proto
 | `DL2 <file>` | Chunked ACK download — **preferred** (see §5.2) | `DLSTART <size>` ... `DLEND read=<n>` |
 | `DFU` | Enter USB DFU bootloader for flashing | (device re-enumerates as DFU) |
 | `MOUNT` | Mount the SD filesystem | `MOUNT fr=0` (0 = OK) |
+| `LTEST` | Long-filename diagnostic: create/readdir/rename/delete a long test name | `LTEST mount=0 ...` |
 | `SD` | Init SD card | `SD init=OK cap=125844324352B` |
 | `CHECK` | Validate a recording file | — |
 | `CAPT` | Diagnostic capture test | — |
@@ -116,7 +139,8 @@ Two ways to enter the ST DFU bootloader for flashing:
   `pct` is linear 3.0 V→0 %, 4.2 V→100 %.
 - **RTC**: driven by the 32.768 kHz LSE crystal (PC14/PC15) in the backup domain, so it
   keeps running across resets and STOP sleep (VBAT = 3.3 V rail). Set it with
-  `SETTIME <unix>` (UTC epoch). It is not battery-backed independently of the 3.3 V rail.
+  `SETTIME <unix> [tz_minutes]` (UTC epoch; the optional offset also refreshes the stored
+  timezone). It is not battery-backed independently of the 3.3 V rail.
 - **Low-battery sleep**: with USB detached, if the battery stays below 3.0 V for 3 s the
   device enters **STOP mode**. It wakes every 4 s (RTC wake-up timer) to refresh the IWDG
   and re-check; it re-enters STOP until the voltage rises above 3.3 V or USB is attached
