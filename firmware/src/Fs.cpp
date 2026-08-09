@@ -2,6 +2,8 @@
 #include "ff.h"
 #include "Config.h"
 #include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 static FATFS fs;
 
@@ -77,4 +79,86 @@ int fs_test_write(const char* path, const uint8_t* data, size_t n)
     }
     f_close(&f);
     return 0;
+}
+
+typedef struct { char name[40]; uint32_t size; } rec_file_t;
+
+static bool is_seq_name(const char* n) { return (n[3] != '-'); }   /* "REC###..." vs "REC-..." */
+static uint32_t seq_num(const char* n)
+{
+    uint32_t v = 0;
+    const char* p = n + 3;
+    while (*p >= '0' && *p <= '9') { v = v * 10u + (uint32_t)(*p - '0'); p++; }
+    return v;
+}
+
+static int rec_oldest_cmp(const void* a, const void* b)
+{
+    const rec_file_t* A = (const rec_file_t*)a;
+    const rec_file_t* B = (const rec_file_t*)b;
+    bool sa = is_seq_name(A->name), sb = is_seq_name(B->name);
+    if (sa != sb) return sa ? -1 : 1;                    /* seq files are the old era -> oldest */
+    if (sa) {
+        uint32_t na = seq_num(A->name), nb = seq_num(B->name);
+        return (na < nb) ? -1 : (na > nb) ? 1 : 0;
+    }
+    return strcmp(A->name, B->name);                     /* timestamp names sort chronologically */
+}
+
+uint64_t fs_free_bytes(void)
+{
+    FATFS* fatfs;
+    DWORD nclst = 0;
+    if (f_getfree("0:", &nclst, &fatfs) != FR_OK) return 0;
+    return (uint64_t)nclst * fatfs->csize * _MIN_SS;
+}
+
+static int fs_collect_rec(rec_file_t* arr, int cap, const char* skip)
+{
+    DIR dir;
+    FILINFO fno;
+    int n = 0;
+    if (f_opendir(&dir, "0:/") != FR_OK) return 0;
+    while (n < cap && f_readdir(&dir, &fno) == FR_OK && fno.fname[0]) {
+        if ((fno.fattrib & AM_DIR) != 0) continue;
+        if (strncmp(fno.fname, REC_DIR_STR, strlen(REC_DIR_STR)) != 0) continue;
+        char* dot = strrchr(fno.fname, '.');
+        if (dot == NULL || strcmp(dot + 1, REC_EXT_STR) != 0) continue;
+        if (skip != NULL && strcmp(fno.fname, skip) == 0) continue;   /* never touch active recording */
+        strncpy(arr[n].name, fno.fname, sizeof(arr[n].name) - 1);
+        arr[n].name[sizeof(arr[n].name) - 1] = 0;
+        arr[n].size = (uint32_t)fno.fsize;
+        n++;
+    }
+    f_closedir(&dir);
+    return n;
+}
+
+static int fs_delete_oldest_candidates(const char* skip, int limit)
+{
+    rec_file_t arr[64];
+    int n = fs_collect_rec(arr, 64, skip);
+    if (n == 0) return 0;
+    qsort(arr, (size_t)n, sizeof(rec_file_t), rec_oldest_cmp);
+    int deleted = 0;
+    for (int i = 0; i < n && deleted < limit; i++) {
+        char path[44];
+        snprintf(path, sizeof(path), "0:/%s", arr[i].name);
+        if (f_unlink(path) == FR_OK) deleted++;
+    }
+    return deleted;
+}
+
+int fs_delete_oldest(const char* skip) { return fs_delete_oldest_candidates(skip, 1); }
+
+int fs_make_space(uint64_t want_free, const char* skip)
+{
+    if (fs_free_bytes() >= want_free) return 0;
+    int deleted = 0;
+    while (fs_free_bytes() < want_free) {
+        int d = fs_delete_oldest_candidates(skip, 1);
+        if (d == 0) break;
+        deleted += d;
+    }
+    return deleted;
 }

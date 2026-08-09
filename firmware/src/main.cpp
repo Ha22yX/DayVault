@@ -380,6 +380,7 @@ static size_t rec_chunk_len = 0;
 static int rec_err = 0;
 static char rec_name[40];          /* current file path (set in rec_start) */
 static uint8_t rec_name_kind = 0;  /* 0 = seq fallback, 1 = timestamp */
+#define CIRC_FREE_BYTES (64u * 1024u * 1024u)   /* delete oldest below this free space */
 
 static void rec_flush_chunk(void)
 {
@@ -694,6 +695,17 @@ loop_restart:
                         rec_stop();
                     } else if (strncmp(line, "CHECK", 5) == 0) {
                         check_wav_file();
+                    } else if (strncmp(line, "CIRC", 4) == 0) {
+                        fs_mount_result();
+                        uint64_t fb = fs_free_bytes();
+                        int del = fs_make_space(CIRC_FREE_BYTES, rec_active ? rec_name + 3 : NULL);
+                        uint64_t fa = fs_free_bytes();
+                        Serial.print("CIRC free_before="); Serial.print((uint32_t)(fb >> 20)); Serial.print("MB");
+                        Serial.print(" deleted="); Serial.print(del);
+                        Serial.print(" free_after="); Serial.print((uint32_t)(fa >> 20)); Serial.println("MB");
+                    } else if (strncmp(line, "DELOLDEST", 9) == 0) {
+                        int del = fs_delete_oldest(rec_active ? rec_name + 3 : NULL);
+                        Serial.print("DELOLDEST deleted="); Serial.println(del);
                     } else if (strncmp(line, "LTEST", 5) == 0) {
                         lfn_bringup_test();
                     } else if (strncmp(line, "CAPT", 4) == 0) {
