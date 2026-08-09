@@ -487,12 +487,21 @@ void loop()
 loop_restart:
     dbg_iwdg_kick();
 
-    if ((millis() - last_bat_ms) >= 1000) {
+    if (bat_asleep) {
+        /* every loop pass: after a periodic wake re-check promptly and re-sleep while still low */
+        uint16_t mv = bat_millivolts();
+        if (mv >= BAT_RESUME_MV) {
+            bat_asleep = 0;              /* charged (e.g. USB) -> resume normal operation */
+            dt_wake_off();               /* stop periodic 4 s RTC wake */
+            low_start = 0;
+        } else {
+            low_battery_enter_stop();    /* still low -> back to sleep (re-arms RTC wake) */
+            goto loop_restart;           /* skip remaining checks this pass */
+        }
+    } else if ((millis() - last_bat_ms) >= 1000) {
         last_bat_ms = millis();
         uint16_t mv = bat_millivolts();
-        if (bat_asleep) {
-            if (mv >= BAT_RESUME_MV) bat_asleep = 0;     /* charged (e.g. USB) -> resume */
-        } else if (mv < BAT_SLEEP_MV) {
+        if (mv < BAT_SLEEP_MV) {
             if (low_start == 0) low_start = millis();
             if ((millis() - low_start) > 3000) {
                 low_battery_enter_stop();                  /* returns on wake; re-checks below */

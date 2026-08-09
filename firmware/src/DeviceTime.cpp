@@ -149,6 +149,12 @@ void dt_set_wake(uint16_t seconds)
     HAL_NVIC_EnableIRQ(RTC_WKUP_IRQn);
 }
 
+void dt_wake_off(void)
+{
+    HAL_NVIC_DisableIRQ(RTC_WKUP_IRQn);
+    HAL_RTCEx_DeactivateWakeUpTimer(&s_hrtc);
+}
+
 extern "C" void RTC_WKUP_IRQHandler(void)
 {
     HAL_RTCEx_WakeUpTimerIRQHandler(&s_hrtc);
