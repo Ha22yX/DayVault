@@ -24,6 +24,9 @@ static int16_t pdm_dma_buf2[PDM_DMA_BUF_SAMPLES] __attribute__((aligned(4)));
 static volatile uint32_t pdm_dma_pos = 0;
 static volatile uint32_t pdm_dma_pos2 = 0;
 static volatile uint32_t pdm_dma_underruns = 0;
+static uint32_t pdm_dma_written_total = 0;
+static uint32_t pdm_dma_consumed_total = 0;
+static uint32_t pdm_dma_prev_written = 0;
 
 static int32_t hpf_y = 0;
 static int32_t hpf_x = 0;
@@ -192,6 +195,9 @@ void pdm_start(void)
     pdm_dma_pos = 0;
     pdm_dma_pos2 = 0;
     pdm_dma_underruns = 0;
+    pdm_dma_written_total = 0;
+    pdm_dma_consumed_total = 0;
+    pdm_dma_prev_written = 0;
     hpf_y = 0;
     hpf_x = 0;
     eq_x1 = 0; eq_x2 = 0; eq_y1 = 0; eq_y2 = 0;
@@ -230,7 +236,20 @@ int pdm_dma_read(int16_t* buf, int max)
     while (n < max) {
         uint32_t ndtr = PDM_DMA_CH->CNDTR;
         uint32_t written = (PDM_DMA_BUF_SAMPLES - ndtr) & (PDM_DMA_BUF_SAMPLES - 1u);
-        uint32_t avail = (written + PDM_DMA_BUF_SAMPLES - pdm_dma_pos) & (PDM_DMA_BUF_SAMPLES - 1u);
+        uint32_t delta = (written + PDM_DMA_BUF_SAMPLES - pdm_dma_prev_written) & (PDM_DMA_BUF_SAMPLES - 1u);
+        pdm_dma_prev_written = written;
+        pdm_dma_written_total += delta;
+
+        uint32_t backlog = pdm_dma_written_total - pdm_dma_consumed_total;
+        if (backlog > PDM_DMA_BUF_SAMPLES) {   /* DMA lapped the read position -> stale data */
+            overruns++;
+            uint32_t head = (written + PDM_DMA_BUF_SAMPLES - PDM_DMA_BUF_FREE_MARGIN) & (PDM_DMA_BUF_SAMPLES - 1u);
+            pdm_dma_pos = head;
+            pdm_dma_pos2 = head;
+            pdm_dma_consumed_total = pdm_dma_written_total - (PDM_DMA_BUF_SAMPLES - PDM_DMA_BUF_FREE_MARGIN);
+            backlog = PDM_DMA_BUF_SAMPLES - PDM_DMA_BUF_FREE_MARGIN;
+        }
+        uint32_t avail = backlog;
         if (avail > PDM_DMA_BUF_SAMPLES - PDM_DMA_BUF_FREE_MARGIN) {
             avail = PDM_DMA_BUF_SAMPLES - PDM_DMA_BUF_FREE_MARGIN;
         }
@@ -284,6 +303,7 @@ int pdm_dma_read(int16_t* buf, int max)
         }
         pdm_dma_pos = (pdm_dma_pos + take) & (PDM_DMA_BUF_SAMPLES - 1u);
         pdm_dma_pos2 = (pdm_dma_pos2 + take) & (PDM_DMA_BUF_SAMPLES - 1u);
+        pdm_dma_consumed_total += take;
     }
     return n;
 }
