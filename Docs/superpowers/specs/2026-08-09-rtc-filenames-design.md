@@ -91,19 +91,58 @@ Rendering:
 | `LIST` / `fs_next_sequence` | No logic change expected (LFN `fname` is the long name; `parse_num` yields 0 for `REC-`) — verify in LFN bring-up |
 | Docs `Serial-Command-Reference.md` | `SETTIME` new syntax, `SETTZ`, `INFO` new fields, recording naming behavior (timestamp+duration, collision suffix, unset fallback, RTC/timezone semantics) |
 
-### 5. Error handling
+### 5. Power-loss / crash safety (recording must not corrupt or lose files)
+
+Current gaps: `rec_start` writes the 44-byte header once with `data_size=0` and does not
+`f_sync`; recording never `f_sync`s. On a power loss the header says 0 bytes and the FAT
+directory size may still show ~44 bytes, so recorded data appears lost.
+
+- **Start**: after writing the header, `f_sync` immediately so the header is durable even
+  if power is lost very early (valid, empty WAV).
+- **During recording (checkpointing)**: every ~1 s, rewrite the 44-byte header
+  (`RIFF` size + `data_size = rec_data_bytes`) and `f_sync` (flush data + update FAT
+  directory size). On power loss the file is playable up to the last sync (<= ~1 s of
+  data + trailing <=64-byte chunk lost, bounded). Cost: one 512 B sector + directory
+  write per second (negligible wear); the PDM ring buffer absorbs any SD stall, no
+  audio dropout.
+- **Low-battery sleep entry**: if recording, call `rec_stop()` first (clean finalize:
+  rebuild header + sync + close) before entering STOP, so no file is left in a
+  half-written state across sleep.
+- **After a power loss**: the file keeps its start-time name (no duration suffix), but
+  has a valid header, correct size, and is playable. The missing duration suffix is
+  acceptable (only a clean stop renames to the duration form).
+
+### 6. Affected existing code
+
+| Location | Change |
+|---|---|
+| `main.cpp rec_start/rec_stop` | Timestamp name generation, duration math, `f_rename`, collision retry, seq fallback; header `f_sync` at start; periodic header-update + `f_sync` checkpointing |
+| `main.cpp low_battery_enter_stop` / sleep entry | `rec_stop()` first if recording is active |
+| `main.cpp check_wav_file` (CHECK cmd) | Find newest recording by lexicographically largest filename instead of `seq-1` |
+| `DeviceTime` | Local-time formatting; backup-domain `time_set`/`tz_offset`; `SETTIME` offset arg; `SETTZ` |
+| `INFO` | `time=` local, add `tz=` and `time_set=` |
+| `REC started seq=` | Append actual filename |
+| `LIST` / `fs_next_sequence` | No logic change expected (LFN `fname` is the long name; `parse_num` yields 0 for `REC-`) — verify in LFN bring-up |
+| Docs `Serial-Command-Reference.md` | `SETTIME` new syntax, `SETTZ`, `INFO` new fields, recording naming behavior (timestamp+duration, collision suffix, unset fallback, power-loss/crash recovery, RTC/timezone semantics) |
+
+### 7. Error handling
 
 - Long-name open failure -> sequence-name fallback; recording continues.
 - `f_rename` failure -> keep the start-time filename; file is intact.
+- Header-update / `f_sync` failure during recording -> keep recording (best-effort
+  checkpointing); the final `rec_stop` still attempts a clean finalize.
 - No path may block or lose a recording.
 
-### 6. Testing
+### 8. Testing
 
 1. LFN bring-up empirical test (create / readdir / rename on the SD card).
 2. Build + flash.
 3. `SETTIME <unix> 480` then `REC`/`STOP` — verify `REC-YYYYMMDD-HHMM.WAV` created and
    renamed to `REC-..._MmSs.WAV` on stop.
 4. Two recordings in the same minute — verify `_1` suffix.
-5. `INFO` shows local time + `tz=+480` + `time_set=1`.
-6. `LIST` shows long names; `DOWNLOAD`/`DL2` still work by exact name.
-7. Docs updated and reviewed.
+5. Power-loss drill: during recording, unplug USB and pull the battery (or kill power),
+   re-power, and confirm the file is playable with data up to the last checkpoint and a
+   valid header.
+6. `INFO` shows local time + `tz=+480` + `time_set=1`.
+7. `LIST` shows long names; `DOWNLOAD`/`DL2` still work by exact name.
+8. Docs updated and reviewed.
