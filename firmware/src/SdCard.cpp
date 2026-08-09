@@ -138,6 +138,7 @@ bool sd_init(void)
 
 static bool sd_single(bool write, uint32_t lba, const uint8_t* src, uint8_t* dst)
 {
+    IWDG->KR = 0xAAAA;   /* feed IWDG during long SD operations (exFAT free-cluster scan, downloads) */
     uint8_t r;
     if (!sd_cmd(write ? 24 : 17, lba, 0x01, &r, 20)) return false;
     if (write) {

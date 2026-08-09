@@ -303,7 +303,7 @@ static void download_file(const char* fname)
 
     Serial.print("DL mount="); Serial.println(fs_mount_result());
     snprintf(path, sizeof(path), "0:/%s", fname);
-    if (f_open(&f, path, FA_READ) != FR_OK) { Serial.println("DL open FAIL"); fs_unmount(); return; }
+    if (f_open(&f, path, FA_READ) != FR_OK) { Serial.println("DL open FAIL"); return; }
     Serial.print("DLSTART ");
     Serial.println((uint32_t)f_size(&f));
     uint32_t total_read = 0, total_written = 0;
@@ -326,7 +326,7 @@ static void download_file2(const char* fname)
 
     snprintf(path, sizeof(path), "0:/%s", fname);
     if (!fs_mount()) { Serial.println("DL2 mount FAIL"); return; }
-    if (f_open(&f, path, FA_READ) != FR_OK) { Serial.println("DL2 open FAIL"); fs_unmount(); return; }
+    if (f_open(&f, path, FA_READ) != FR_OK) { Serial.println("DL2 open FAIL"); return; }
     uint32_t size = (uint32_t)f_size(&f);
     Serial.print("DLSTART "); Serial.println(size);
     uint32_t total = 0;
