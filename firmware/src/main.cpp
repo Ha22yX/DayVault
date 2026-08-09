@@ -367,8 +367,10 @@ static WavConfig rec_cfg;
 static FIL rec_file;
 static bool rec_active = false;
 static uint32_t rec_data_bytes = 0;
+#define REC_SYNC_INTERVAL_MS 1000u
 static uint32_t rec_seq = 1;
 static uint32_t rec_start_ms = 0;
+static uint32_t rec_last_sync_ms = 0;
 static uint32_t rec_discard = 0;
 static uint8_t rec_chunk[64];
 static size_t rec_chunk_len = 0;
@@ -434,6 +436,7 @@ static void rec_start(void)
     pdm_init(&audio_rb);
     pdm_start();
     rec_start_ms = millis();
+    rec_last_sync_ms = millis();
     rec_active = true;
 }
 
@@ -503,6 +506,19 @@ static void rec_poll_samples(void)
     }
 }
 
+static void rec_checkpoint(void)
+{
+    if (!rec_active) return;
+    uint8_t hdr[44];
+    UINT wr = 0;
+    wav_build_header(hdr, &rec_cfg, rec_data_bytes);
+    if (f_lseek(&rec_file, 0) == FR_OK && f_write(&rec_file, hdr, 44, &wr) == FR_OK) {
+        f_sync(&rec_file);
+    }
+    f_lseek(&rec_file, 44u + rec_data_bytes);
+    rec_last_sync_ms = millis();
+}
+
 static void exti_usb_wake_enable(void)
 {
     SYSCFG->EXTICR[2] |= SYSCFG_EXTICR3_EXTI9_PA;   /* PA9 -> EXTI9 */
@@ -515,6 +531,7 @@ static void exti_usb_wake_enable(void)
 
 static void low_battery_enter_stop(void)
 {
+    if (rec_active) rec_stop();   /* clean finalize: rebuild header + sync + close */
     dt_set_wake(4);                       /* wake every 4 s to refresh IWDG + re-check */
     dbg_iwdg_kick();                      /* refresh right before sleeping */
     HAL_SuspendTick();
@@ -922,5 +939,8 @@ loop_restart:
         if (usb_pending == 0) rec_start(); else rec_stop();
         usb_pending = -1;
     }
-    if (rec_active) rec_poll_samples();
+    if (rec_active) {
+        rec_poll_samples();
+        if ((millis() - rec_last_sync_ms) >= REC_SYNC_INTERVAL_MS) rec_checkpoint();
+    }
 }
