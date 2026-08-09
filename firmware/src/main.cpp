@@ -735,11 +735,20 @@ loop_restart:
                         Serial.print(" up="); Serial.println(millis());
                         g_dbg_step = 0;
                     } else if (strncmp(line, "SETTIME ", 8) == 0) {
-                        uint32_t unix = (uint32_t)strtoul(line + 8, NULL, 10);
+                        char* sp = strchr(line + 8, ' ');
+                        uint32_t unix;
+                        int32_t tz = INT32_MIN;
+                        if (sp != NULL) { *sp = 0; tz = (int32_t)strtol(sp + 1, NULL, 10); }
+                        unix = (uint32_t)strtoul(line + 8, NULL, 10);
                         dt_set_unix(unix);
+                        if (tz != INT32_MIN) dt_set_tz(tz);
                         char tb[32];
-                        dt_format(tb, sizeof(tb));
+                        dt_format_local(tb, sizeof(tb));
                         Serial.print("TIME set to "); Serial.println(tb);
+                    } else if (strncmp(line, "SETTZ ", 6) == 0) {
+                        int32_t tz = (int32_t)strtol(line + 6, NULL, 10);
+                        dt_set_tz(tz);
+                        Serial.print("TZ set to "); Serial.println(tz);
                     } else if (strncmp(line, "TIME", 4) == 0) {
                         Serial.print("TR="); Serial.print(RTC->TR, HEX);
                         Serial.print(" DR="); Serial.print(RTC->DR, HEX);
@@ -748,6 +757,7 @@ loop_restart:
                         Serial.print(" ISR="); Serial.print(RTC->ISR, HEX);
                         Serial.print(" LSE="); Serial.print((RCC->BDCR & RCC_BDCR_LSERDY) ? 1 : 0);
                         Serial.print(" LSION="); Serial.print((RCC->CSR & RCC_CSR_LSION) ? 1 : 0);
+                        Serial.print(" BKP1="); Serial.print(RTC->BKP1R, HEX);
                         Serial.println();
                     } else if (strncmp(line, "INFO", 4) == 0) {
                         Serial.print("INFO usb_detect="); Serial.print(digitalRead(PIN_USB_DETECT));
@@ -760,10 +770,12 @@ loop_restart:
                         if (sd_capacity_bytes() > 0) { Serial.print(sd_capacity_bytes()); Serial.print("B"); }
                         else { Serial.print("none"); }
                         char tb[32];
-                        dt_format(tb, sizeof(tb));
+                        dt_format_local(tb, sizeof(tb));
                         Serial.print(" time="); Serial.print(tb);
                         Serial.print(" bat="); Serial.print(bat_millivolts()); Serial.print("mV");
                         Serial.print(" pct="); Serial.print(bat_percent());
+                        Serial.print(" tz="); Serial.print(dt_get_tz());
+                        Serial.print(" time_set="); Serial.print(dt_time_is_set() ? 1 : 0);
                         Serial.println();
                     } else if (strncmp(line, "MOUNT", 5) == 0) {
                         Serial.print("MOUNT fr=");

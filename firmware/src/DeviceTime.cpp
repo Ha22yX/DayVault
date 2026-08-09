@@ -5,6 +5,9 @@
 #define DT_MAGIC           0xA5A5A5A5u
 #define DT_RTC_ASYNCH_PREDIV  127u
 #define DT_RTC_SYNCH_PREDIV   255u
+#define DT_BKP_TZ         RTC->BKP1R
+#define DT_TZ_SET_BIT     0x80000000u
+#define DT_DEFAULT_TZ     480                  /* minutes, UTC+8 */
 
 static RTC_HandleTypeDef s_hrtc;
 
@@ -103,6 +106,7 @@ void dt_init(void)
     if (RTC->BKP0R != DT_MAGIC) {
         __HAL_RTC_WRITEPROTECTION_DISABLE(&s_hrtc);
         RTC->BKP0R = DT_MAGIC;
+        RTC->BKP1R = (uint32_t)DT_DEFAULT_TZ;              /* offset only, time_set=0 */
         __HAL_RTC_WRITEPROTECTION_ENABLE(&s_hrtc);
         rtc_store(days_from_civil(2026, 1, 1) * 86400u);   /* 2026-01-01 00:00:00 UTC */
     }
@@ -111,6 +115,29 @@ void dt_init(void)
 void dt_set_unix(uint32_t unix)
 {
     rtc_store(unix);
+    __HAL_RTC_WRITEPROTECTION_DISABLE(&s_hrtc);
+    RTC->BKP1R |= DT_TZ_SET_BIT;
+    __HAL_RTC_WRITEPROTECTION_ENABLE(&s_hrtc);
+}
+
+bool dt_time_is_set(void)
+{
+    return (RTC->BKP1R & DT_TZ_SET_BIT) != 0;
+}
+
+int32_t dt_get_tz(void)
+{
+    /* bits [30:0] hold the offset (two's complement, sign-extended from bit 30) */
+    uint32_t v = RTC->BKP1R & 0x7FFFFFFFu;
+    return (int32_t)((int32_t)(v << 1) >> 1);
+}
+
+void dt_set_tz(int32_t minutes)
+{
+    uint32_t set = RTC->BKP1R & DT_TZ_SET_BIT;
+    __HAL_RTC_WRITEPROTECTION_DISABLE(&s_hrtc);
+    RTC->BKP1R = set | ((uint32_t)minutes & 0x7FFFFFFFu);
+    __HAL_RTC_WRITEPROTECTION_ENABLE(&s_hrtc);
 }
 
 uint32_t dt_get_unix(void)
@@ -140,6 +167,35 @@ void dt_format(char* buf, size_t len)
     uint32_t sod = unix % 86400u;
     snprintf(buf, len, "%04d-%02u-%02u %02u:%02u:%02u",
              y, m, d, sod / 3600u, (sod / 60u) % 60u, sod % 60u);
+}
+
+static void civil_from_local(int64_t local, int* y, unsigned* m, unsigned* d, uint32_t* sod)
+{
+    uint32_t days = (uint32_t)(local / 86400);
+    civil_from_days(days, y, m, d);
+    *sod = (uint32_t)(local % 86400);
+}
+
+void dt_format_local(char* buf, size_t len)
+{
+    if (buf == NULL) return;
+    if (len < 20u) { if (len > 0u) buf[0] = 0; return; }
+    int64_t local = (int64_t)dt_get_unix() + (int64_t)dt_get_tz() * 60;
+    int y; unsigned m, d; uint32_t sod;
+    civil_from_local(local, &y, &m, &d, &sod);
+    snprintf(buf, len, "%04d-%02u-%02u %02u:%02u:%02u",
+             y, m, d, sod / 3600u, (sod / 60u) % 60u, sod % 60u);
+}
+
+void dt_format_stem(char* buf, size_t len)
+{
+    if (buf == NULL) return;
+    if (len < 16u) { if (len > 0u) buf[0] = 0; return; }
+    int64_t local = (int64_t)dt_get_unix() + (int64_t)dt_get_tz() * 60;
+    int y; unsigned m, d; uint32_t sod;
+    civil_from_local(local, &y, &m, &d, &sod);
+    snprintf(buf, len, "%04u%02u%02u-%02u%02u",
+             (unsigned)y, m, d, sod / 3600u, (sod / 60u) % 60u);
 }
 
 void dt_set_wake(uint16_t seconds)
