@@ -59,6 +59,7 @@ uint16_t bat_millivolts(void)
     }
     uint16_t avg_bat = (uint16_t)(sum_bat / 8u);
     uint16_t avg_vrefint = (uint16_t)(sum_vrefint / 8u);
+    if (avg_vrefint == 0u) return 0u;
     uint32_t vdda = (uint32_t)(*VREFINT_CAL_ADDR) * 3000UL / avg_vrefint;
     return (uint16_t)((uint32_t)avg_bat * vdda / 2048u);
 }

@@ -47,6 +47,7 @@ static void rtc_store(uint32_t unix)
     int y;
     unsigned m, d;
     civil_from_days(days, &y, &m, &d);
+    if (y > 2099) y = 2099;
 
     RTC_TimeTypeDef t;
     t.Hours          = (uint8_t)(sod / 3600u);
