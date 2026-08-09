@@ -115,41 +115,51 @@ static void dbg_report_last_step(void)
 static uint8_t audio_buf[PDM_RING_BYTES];
 static RingBuf audio_rb;
 
+static int rec_name_cmp(const char* a, const char* b);
+
 static void check_wav_file(void)
 {
+    DIR dir;
+    FILINFO fno;
+    char best[40];
+    best[0] = 0;
+    Serial.print("CHECK mount="); Serial.println(fs_mount_result());
+    if (f_opendir(&dir, "0:/") == FR_OK) {
+        while (f_readdir(&dir, &fno) == FR_OK && fno.fname[0]) {
+            if ((fno.fattrib & AM_DIR) != 0) continue;
+            if (strncmp(fno.fname, REC_DIR_STR, strlen(REC_DIR_STR)) != 0) continue;
+            char* dot = strrchr(fno.fname, '.');
+            if (dot == NULL || strcmp(dot + 1, REC_EXT_STR) != 0) continue;
+            if (best[0] == 0 || rec_name_cmp(fno.fname, best) > 0) strncpy(best, fno.fname, sizeof(best) - 1);
+        }
+        f_closedir(&dir);
+    }
+    if (best[0] == 0) { Serial.println("CHECK none"); return; }
+
     FIL f;
     uint8_t hdr[44];
     UINT rd = 0;
-    FRESULT r;
-    char name[24];
-    uint32_t seq;
-    uint32_t newest;
-
-    Serial.print("CHECK mount="); Serial.println(fs_mount_result());
-    seq = fs_next_sequence();
-    newest = (seq > 1) ? seq - 1 : 1;
-    snprintf(name, sizeof(name), "0:/%s%03u.%s", REC_DIR_STR, (unsigned)newest, REC_EXT_STR);
-
+    char name[44];
+    snprintf(name, sizeof(name), "0:/%s", best);
     Serial.print("CHECK file="); Serial.println(name);
-    if (f_open(&f, name, FA_READ) != FR_OK) {
-        Serial.println("CHECK open FAIL");
-        return;
-    }
-    r = f_read(&f, hdr, 44, &rd);
+    if (f_open(&f, name, FA_READ) != FR_OK) { Serial.println("CHECK open FAIL"); return; }
+    FRESULT r = f_read(&f, hdr, 44, &rd);
     Serial.print("CHECK hdr_fr="); Serial.print((int)r);
     Serial.print(" rd="); Serial.print(rd);
     if (rd == 44) {
         bool riff = (hdr[0]=='R'&&hdr[1]=='I'&&hdr[2]=='F'&&hdr[3]=='F'&&hdr[8]=='W'&&hdr[9]=='A'&&hdr[10]=='V'&&hdr[11]=='E');
         uint32_t data_sz = (uint32_t)hdr[40] | ((uint32_t)hdr[41]<<8) | ((uint32_t)hdr[42]<<16) | ((uint32_t)hdr[43]<<24);
         uint16_t ch = (uint16_t)(hdr[22] | (hdr[23]<<8));
-        uint32_t sr = (uint32_t)hdr[24] | ((uint32_t)hdr[25]<<8) | ((uint32_t)hdr[26]<<16) | ((uint32_t)hdr[27]<<24);
-        Serial.print(" riff="); Serial.print(riff ? "yes" : "NO");
+        uint32_t rate = (uint32_t)hdr[24] | ((uint32_t)hdr[25]<<8) | ((uint32_t)hdr[26]<<16) | ((uint32_t)hdr[27]<<24);
+        uint32_t bytes = (uint32_t)hdr[4] | ((uint32_t)hdr[5]<<8) | ((uint32_t)hdr[6]<<16) | ((uint32_t)hdr[7]<<24);
+        Serial.print(" riff="); Serial.print(riff ? 1 : 0);
         Serial.print(" ch="); Serial.print(ch);
-        Serial.print(" sr="); Serial.print(sr);
-        Serial.print(" dataSz="); Serial.println(data_sz);
+        Serial.print(" rate="); Serial.print(rate);
+        Serial.print(" data="); Serial.print(data_sz);
+        Serial.print(" riff_sz="); Serial.print(bytes);
+        Serial.println();
     }
     f_close(&f);
-    Serial.println("CHECK done");
 }
 
 static void lfn_bringup_test(void)
@@ -363,6 +373,8 @@ static uint32_t rec_discard = 0;
 static uint8_t rec_chunk[64];
 static size_t rec_chunk_len = 0;
 static int rec_err = 0;
+static char rec_name[40];          /* current file path (set in rec_start) */
+static uint8_t rec_name_kind = 0;  /* 0 = seq fallback, 1 = timestamp */
 
 static void rec_flush_chunk(void)
 {
@@ -373,19 +385,48 @@ static void rec_flush_chunk(void)
     }
 }
 
+static void rec_duration_str(char* out, size_t len, uint32_t secs)
+{
+    uint32_t h = secs / 3600u, m = (secs / 60u) % 60u, s = secs % 60u;
+    if (h > 0) snprintf(out, len, "_%luh%02lum%02lus", (unsigned long)h, (unsigned)m, (unsigned)s);
+    else       snprintf(out, len, "_%lum%02lus",       (unsigned)m,    (unsigned)s);
+}
+
+static int rec_name_cmp(const char* a, const char* b)
+{
+    bool ta = (a[3] == '-');   /* REC-YYYYMMDD-HHMM... : timestamp */
+    bool tb = (b[3] == '-');
+    if (ta != tb) return ta ? 1 : -1;   /* timestamp names always "newer" than seq names */
+    return strcmp(a, b);
+}
+
 static void rec_start(void)
 {
-    char name[24];
     UINT wr = 0;
     uint8_t hdr[44];
     if (rec_active) return;
     rec_err = 0;
     if (!fs_mount()) { rec_err = 1; return; }
-    rec_seq = fs_next_sequence();
-    snprintf(name, sizeof(name), "0:/%s%03u.%s", REC_DIR_STR, (unsigned)rec_seq, REC_EXT_STR);
-    if (f_open(&rec_file, name, FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) { rec_err = 2; fs_unmount(); return; }
+
+    rec_name_kind = 0;
+    if (dt_time_is_set()) {
+        char stem[16];
+        dt_format_stem(stem, sizeof(stem));
+        for (uint8_t n = 0; n < 10; n++) {
+            if (n == 0) snprintf(rec_name, sizeof(rec_name), "0:/REC-%s.WAV", stem);
+            else        snprintf(rec_name, sizeof(rec_name), "0:/REC-%s_%u.WAV", stem, (unsigned)n);
+            if (f_open(&rec_file, rec_name, FA_CREATE_NEW | FA_WRITE) == FR_OK) { rec_name_kind = 1; break; }
+        }
+    }
+    if (!rec_name_kind) {
+        rec_seq = fs_next_sequence();
+        snprintf(rec_name, sizeof(rec_name), "0:/%s%03u.%s", REC_DIR_STR, (unsigned)rec_seq, REC_EXT_STR);
+        if (f_open(&rec_file, rec_name, FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) { rec_err = 2; fs_unmount(); return; }
+    }
+
     wav_build_header(hdr, &rec_cfg, 0);
     if (f_write(&rec_file, hdr, 44, &wr) != FR_OK || wr != 44) { rec_err = 3; f_close(&rec_file); fs_unmount(); return; }
+    f_sync(&rec_file);               /* durable header before any data (power-loss safety) */
     rec_data_bytes = 0;
     rec_chunk_len = 0;
     rec_discard = 32;
@@ -422,6 +463,16 @@ static void rec_stop(void)
     wav_build_header(hdr, &rec_cfg, rec_data_bytes);
     if (f_lseek(&rec_file, 0) == FR_OK) f_write(&rec_file, hdr, 44, &wr);
     f_sync(&rec_file);
+    if (rec_name_kind == 1) {
+        uint32_t secs = rec_cfg.byte_rate ? (rec_data_bytes / (uint32_t)rec_cfg.byte_rate) : 0;
+        char dur[24], newname[64];
+        rec_duration_str(dur, sizeof(dur), secs);
+        char* dot = strrchr(rec_name, '.');
+        if (dot != NULL) {
+            snprintf(newname, sizeof(newname), "%.*s%s.WAV", (int)(dot - rec_name), rec_name, dur);
+            if (f_rename(rec_name, newname) == FR_OK) strncpy(rec_name, newname, sizeof(rec_name) - 1);
+        }
+    }
     f_close(&rec_file);
     fs_unmount();
     rec_active = false;
@@ -617,7 +668,8 @@ loop_restart:
                         download_file2(line + 4);
                     } else if (strncmp(line, "REC", 3) == 0 && line[3] != ' ') {
                         rec_start();
-                        Serial.print("REC started seq="); Serial.println(rec_seq);
+                        Serial.print("REC started seq="); Serial.print(rec_seq);
+                        Serial.print(" name="); Serial.println(rec_name);
                     } else if (strncmp(line, "STOP", 4) == 0) {
                         rec_stop();
                     } else if (strncmp(line, "CHECK", 5) == 0) {
