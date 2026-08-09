@@ -8,5 +8,7 @@ def test_vidpid_regex():
     assert _SER_RE.search(hw).group(1) == "206C36943831"
 
 
-def test_other_vidpid_rejected():
-    assert not _VIDPID_RE.search("USB VID:PID=1D6B:0002").group(2) == "5740"
+def test_foreign_vidpid_regex_match():
+    m = _VIDPID_RE.search("USB VID:PID=1D6B:0002")
+    assert m
+    assert int(m.group(2), 16) != 0x5740

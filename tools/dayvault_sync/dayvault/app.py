@@ -184,6 +184,10 @@ class DeviceMonitor(QObject):
                 self._known[serial] = port
                 self.device_added.emit(port, serial)
                 self.start_sync(port, serial)
+            elif self._known[serial] != port:
+                self._known[serial] = port
+                if serial not in self._threads:
+                    self.start_sync(port, serial)
 
     def start_sync(self, port: str, serial: str):
         if serial in self._threads:
@@ -353,11 +357,14 @@ class MainWindow(QMainWindow):
         rows = self._files.setdefault(serial, [])
         downloaded = set(result.get("downloaded", []))
         failed = set(result.get("failed", []))
+        state = store.load_state(serial)
         for row in rows:
             if row["name"] in downloaded:
                 row["status"] = "已下载"
             elif row["name"] in failed:
                 row["status"] = "下载失败"
+            elif row["status"].startswith("下载中"):
+                row["status"] = "已下载" if state.get(row["name"]) == row["size"] else "未下载"
         if serial == self.current_serial():
             self._refresh_table()
         parts = [f"{serial} 同步完成"]
@@ -368,6 +375,11 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("，".join(parts), 8000)
 
     def on_sync_error(self, serial: str, msg: str):
+        for row in self._files.get(serial, []):
+            if row["status"].startswith("下载中"):
+                row["status"] = "下载失败"
+        if serial == self.current_serial():
+            self._refresh_table()
         self.statusBar().showMessage(f"{serial} 同步出错: {msg}", 10000)
 
     def on_sync_now(self):
@@ -426,7 +438,9 @@ class MainWindow(QMainWindow):
             self.table.setItem(i, self._COL_STATUS, status_item)
 
     def closeEvent(self, event):
-        if self._tray is not None and self._tray.isVisible():
+        tray_ok = (self._tray is not None and self._tray.isVisible()
+                   and QSystemTrayIcon.isSystemTrayAvailable())
+        if tray_ok:
             event.ignore()
             self.hide()
             self._tray.showMessage(

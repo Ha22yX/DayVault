@@ -25,6 +25,28 @@ def test_parse_rec_name_timestamp_collision_no_duration():
     assert r["duration_secs"] is None
 
 
+def test_parse_rec_name_plain_timestamp():
+    r = parse_rec_name("REC-20260809-1110.WAV")
+    assert r["kind"] == "timestamp"
+    assert r["timestamp"] == "2026-08-09 11:10"
+    assert r["collision"] == 0
+    assert r["duration_secs"] is None
+
+
+def test_parse_rec_name_timestamp_collision_with_duration():
+    r = parse_rec_name("REC-20260809-1110_2_0m05s.WAV")
+    assert r["kind"] == "timestamp"
+    assert r["collision"] == 2
+    assert r["duration_secs"] == 5
+
+
+def test_parse_rec_name_timestamp_duration_only():
+    r = parse_rec_name("REC-20260809-1110_5m32s.WAV")
+    assert r["kind"] == "timestamp"
+    assert r["collision"] == 0
+    assert r["duration_secs"] == 332
+
+
 def test_parse_rec_name_seq():
     r = parse_rec_name("REC062.WAV")
     assert r["kind"] == "seq"

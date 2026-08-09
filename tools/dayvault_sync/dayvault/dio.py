@@ -87,6 +87,8 @@ class DeviceConnection:
             chunk = self._ser.read(4096)
             if chunk:
                 buf += chunk
+                if b"FAIL" in buf:
+                    raise IOError(f"DL2 rejected for {name}")
                 idx = buf.find(b"DLSTART ")
                 if idx >= 0:
                     nl = buf.find(b"\n", idx)
