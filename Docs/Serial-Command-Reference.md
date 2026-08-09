@@ -29,7 +29,9 @@ DayVault voice recorder firmware (STM32L452), including the audio download proto
 
 | Command | Description | Example response |
 |---|---|---|
-| `INFO` | Status dump: usb_detect, boot(BOOT0), up(millis), sysclk, ckin_div, fltcr1, sd capacity | `INFO usb_detect=1 boot=0 up=12345 sysclk=80000000 ckin_div=0 fltcr1=0 sd=125844324352B` |
+| `INFO` | Status dump: usb_detect, boot(BOOT0), up(millis), sysclk, ckin_div, fltcr1, sd capacity, time, bat, pct | `INFO usb_detect=1 boot=0 up=12345 sysclk=80000000 ckin_div=0 fltcr1=0 sd=125844324352B time=2026-08-09 12:00:00 bat=3850mV pct=71` |
+| `SETTIME <unix>` | Set the RTC time from a Unix-epoch value (UTC) | `TIME set to 2026-08-09 12:00:00` |
+| `TIME` | Raw RTC diagnostic: TR/DR/SSR/CR/ISR registers + LSE status | `TR=224023 DR=235114 SSR=F3 CR=0 ISR=37 LSE=1` |
 | `REC` | Manually start recording | `REC started seq=62` |
 | `STOP` | Manually stop recording (flushes file) | `AUTO stop err=0 bytes=158432 rate=21056` |
 | `LIST` | List files on SD root with sizes | `LIST mount=0` then `  REC062.WAV 158476` ... `LIST done` |
@@ -105,6 +107,24 @@ Two ways to enter the ST DFU bootloader for flashing:
    dfu-util -a 0 -s 0x08000000:leave -D .pio/build/dayvault/firmware.bin
    ```
 2. **Hardware:** hold BOOT (SW2) + press RST. Use the same `dfu-util` command.
+
+## 6.5 Battery and RTC behavior
+
+- **Battery**: `INFO` reports `bat=..mV pct=..`. The battery is read via ADC1 on PA0
+  (1 M/1 M divider → terminal = ADC × 2), calibrated against VDDA using the internal
+  VREFINT reference (factory calibration at 0x1FFF75AA) and 8-sample averaged.
+  `pct` is linear 3.0 V→0 %, 4.2 V→100 %.
+- **RTC**: driven by the 32.768 kHz LSE crystal (PC14/PC15) in the backup domain, so it
+  keeps running across resets and STOP sleep (VBAT = 3.3 V rail). Set it with
+  `SETTIME <unix>` (UTC epoch). It is not battery-backed independently of the 3.3 V rail.
+- **Low-battery sleep**: with USB detached, if the battery stays below 3.0 V for 3 s the
+  device enters **STOP mode**. It wakes every 4 s (RTC wake-up timer) to refresh the IWDG
+  and re-check; it re-enters STOP until the voltage rises above 3.3 V or USB is attached
+  (USB attach also wakes it via PA9 EXTI). USB-attached (charging) never triggers sleep.
+  During STOP, the RTC keeps the time; clocks are re-initialized (`SystemClock_Config`)
+  on wake.
+- **Recording start/stop** is debounced (100 ms stable) so a noisy USB-detect pin or a
+  threshold hover cannot flip recording repeatedly.
 
 ## 7. Important firmware facts (debugging)
 
