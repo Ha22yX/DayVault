@@ -490,7 +490,7 @@ loop_restart:
     if (bat_asleep) {
         /* every loop pass: after a periodic wake re-check promptly and re-sleep while still low */
         uint16_t mv = bat_millivolts();
-        if (mv >= BAT_RESUME_MV) {
+        if (mv >= BAT_RESUME_MV || digitalRead(PIN_USB_DETECT) == HIGH) {
             bat_asleep = 0;              /* charged (e.g. USB) -> resume normal operation */
             dt_wake_off();               /* stop periodic 4 s RTC wake */
             low_start = 0;
