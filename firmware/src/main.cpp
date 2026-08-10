@@ -603,6 +603,37 @@ void setup()
 
 #define BAT_SLEEP_MV   3000u
 #define BAT_RESUME_MV  3300u
+#define BAT_HIST_N     20u   /* 20 s of history */
+#define BAT_WIN_N      10u   /* average over the previous 10 s */
+#define BAT_SLEEP_SECS 10u   /* the 10 s average must stay below for 10 continuous seconds */
+
+static uint16_t bat_hist[20];
+static uint8_t  bat_hist_idx = 0;
+static uint8_t  bat_hist_cnt = 0;
+
+static void bat_hist_push(uint16_t mv)
+{
+    bat_hist[bat_hist_idx] = mv;
+    bat_hist_idx = (bat_hist_idx + 1) % BAT_HIST_N;
+    if (bat_hist_cnt < BAT_HIST_N) bat_hist_cnt++;
+}
+
+/* Average of the previous 10 s (the 10 most recent samples). */
+static uint16_t bat_win_avg(void)
+{
+    if (bat_hist_cnt < BAT_WIN_N) return 0xFFFFu;   /* not enough history yet */
+    uint32_t sum = 0;
+    for (int i = 0; i < (int)BAT_WIN_N; i++) {
+        sum += bat_hist[(bat_hist_idx + BAT_HIST_N - 1u - (uint8_t)i) % BAT_HIST_N];
+    }
+    return (uint16_t)(sum / BAT_WIN_N);
+}
+
+static void bat_hist_reset(void)
+{
+    bat_hist_idx = 0;
+    bat_hist_cnt = 0;
+}
 
 void loop()
 {
@@ -611,19 +642,23 @@ void loop()
     static int usb_pending = -1;
     static uint32_t usb_pending_since = 0;
     static uint8_t bat_asleep = 0;
-    static uint32_t low_start = 0;
     static uint32_t last_bat_ms = 0;
+    static uint32_t low_secs = 0;
 
 loop_restart:
     dbg_iwdg_kick();
 
     if (bat_asleep) {
-        /* every loop pass: after a periodic wake re-check promptly and re-sleep while still low */
+        /* periodic wake (RTC 4 s): push a reading; resume when the previous-10 s
+           average is above the resume threshold or USB attaches */
         uint16_t mv = bat_millivolts();
-        if (mv >= BAT_RESUME_MV || digitalRead(PIN_USB_DETECT) == HIGH) {
+        bat_hist_push(mv);
+        uint16_t avg = bat_win_avg();
+        if (avg >= BAT_RESUME_MV || digitalRead(PIN_USB_DETECT) == HIGH) {
             bat_asleep = 0;              /* charged (e.g. USB) -> resume normal operation */
             dt_wake_off();               /* stop periodic 4 s RTC wake */
-            low_start = 0;
+            bat_hist_reset();
+            low_secs = 0;
         } else {
             low_battery_enter_stop();    /* still low -> back to sleep (re-arms RTC wake) */
             goto loop_restart;           /* skip remaining checks this pass */
@@ -631,16 +666,20 @@ loop_restart:
     } else if ((millis() - last_bat_ms) >= 1000) {
         last_bat_ms = millis();
         uint16_t mv = bat_millivolts();
-        if (mv < BAT_SLEEP_MV && digitalRead(PIN_USB_DETECT) == LOW) {
-            if (low_start == 0) low_start = millis();
-            if ((millis() - low_start) > 3000) {
-                low_battery_enter_stop();                  /* returns on wake; re-checks below */
-                bat_asleep = 1;                            /* latched until > BAT_RESUME_MV */
-                low_start = 0;
-                goto loop_restart;                         /* skip remaining checks this pass */
+        bat_hist_push(mv);
+        uint16_t avg = bat_win_avg();
+        /* each second, look at the previous-10 s average; it must stay below the
+           threshold for BAT_SLEEP_SECS continuous seconds before sleeping */
+        if (avg != 0xFFFFu && avg < BAT_SLEEP_MV && digitalRead(PIN_USB_DETECT) == LOW) {
+            if (low_secs < 200u) low_secs++;
+            if (low_secs >= BAT_SLEEP_SECS) {
+                low_battery_enter_stop();   /* returns on wake; re-checks below */
+                bat_asleep = 1;             /* latched until avg > BAT_RESUME_MV or USB */
+                low_secs = 0;
+                goto loop_restart;          /* skip remaining checks this pass */
             }
         } else {
-            low_start = 0;
+            low_secs = 0;
         }
     }
 
@@ -738,6 +777,21 @@ loop_restart:
                         lfn_bringup_test();
                     } else if (strncmp(line, "CAPT", 4) == 0) {
                         record_test(5);
+                    } else if (strncmp(line, "BAT10", 5) == 0) {
+                        uint32_t sum = 0, cnt = 0, mn = 0xFFFFFFFF, mx = 0;
+                        uint32_t t0 = millis();
+                        while ((millis() - t0) < 10000) {
+                            dbg_iwdg_kick();   /* keep IWDG alive during the 10 s blocking read */
+                            uint16_t mv = bat_millivolts();
+                            sum += mv; cnt++;
+                            if (mv < mn) mn = mv;
+                            if (mv > mx) mx = mv;
+                            delay(50);
+                        }
+                        Serial.print("BAT10 avg="); Serial.print(sum / cnt);
+                        Serial.print("mV min="); Serial.print(mn);
+                        Serial.print("mV max="); Serial.print(mx);
+                        Serial.print("mV n="); Serial.println(cnt);
                     } else if (strncmp(line, "DFU", 3) == 0) {
                         Serial.println("entering DFU...");
                         Serial.flush();
