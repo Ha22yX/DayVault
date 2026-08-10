@@ -18,7 +18,7 @@
   <img alt="主控" src="https://img.shields.io/badge/MCU-STM32L452-205A4B?style=for-the-badge&logo=stmicroelectronics&logoColor=white" />
   <img alt="固件" src="https://img.shields.io/badge/firmware-PlatformIO-6B7FD7?style=for-the-badge" />
   <img alt="桌面程序" src="https://img.shields.io/badge/desktop-PySide6-2563EB?style=for-the-badge&logo=qt&logoColor=white" />
-  <img alt="音频" src="https://img.shields.io/badge/audio-WAV%20logger-5F7F73?style=for-the-badge" />
+  <img alt="音频" src="https://img.shields.io/badge/audio-Ogg%20Opus-5F7F73?style=for-the-badge" />
 </p>
 
 <p align="center">
@@ -58,14 +58,14 @@
 
 我做 DayVault 的起点，是因为最近在学习 PCB 设计，所以想做一个真正属于自己的硬件项目：一个全天候录音设备，能够把我的每一天、每一句话都录制下来，作为我的人生存档。
 
-我设想的工作流很简单，也很酷：白天随身带着麦克风模块，晚上把它插到电脑上，让 Windows 同步程序自动把新增 `.WAV` 文件同步到本地文件夹；之后再通过语音转文字和 AI 总结，把每天发生的事情自动整理成文字记录。
+我设想的工作流很简单：白天随身带着麦克风模块，晚上把它插到电脑上，让 Windows 同步程序自动把新增 `.OPUS` 录音同步到本地文件夹；之后再通过语音转文字和 AI 总结，把每天发生的事情整理成文字记录。
 
 仓库保留了完整链路：
 
 | 层 | 仓库中包含的内容 |
 | --- | --- |
 | 硬件 | EasyEDA 工程、导出网表、原理图/PCB 截图、引脚表、BOM 和硬件文档。 |
-| 固件 | PlatformIO STM32 固件源码，以及录音、存储、USB 协议、WAV 写入和设备行为相关测试。 |
+| 固件 | PlatformIO STM32 固件源码，以及录音、存储、USB 协议、Ogg Opus 写入和设备行为相关测试。 |
 | 桌面同步 | PySide6 Windows 程序，监听 DayVault USB 串口设备并下载未同步音频。 |
 | 协议文档 | 串口命令参考，覆盖文件列表、下载、时间同步、DFU、电池诊断和文件管理。 |
 
@@ -114,13 +114,19 @@ platformio test
 - 运行日志保存在 `%APPDATA%\DayVault\logs\app.log`。
 - 系统托盘可用时，关闭窗口会最小化到托盘而不是退出。
 
+## 音频录音
+
+生产录音是标准 Ogg Opus `.OPUS` 文件：两个麦克风先自适应融合为精确 16 kHz 的单声道，再以 20 ms 帧、目标 24 kbit/s 受限 VBR restricted-SILK 配置编码。每天录音约占 265 MB。不保留并行 WAV 或 PCM 原始文件；已有的 `.WAV` 旧录音仍可导出，也会参与循环删除。
+
+文件命名、正常停止、断电边界和 `OPUSSTAT` 见 [Opus 录音说明](Docs/09-Opus-Recording.md)。
+
 ## 硬件概览
 
 | 子系统 | 当前器件 | 作用 |
 | --- | --- | --- |
 | 主控 | STM32L452RCT6 | PDM 采集、存储、USB、RTC 与功耗状态控制。 |
 | 麦克风 | 2 x SPH0655LM4H-1-8 | 数字 PDM 人声采集。 |
-| 存储 | SPI1 连接 microSD | 本地 `.WAV` 录音存储。 |
+| 存储 | SPI1 连接 microSD | 本地 Ogg Opus `.OPUS` 录音存储；旧 `.WAV` 仍可导出。 |
 | USB | USB-C Full Speed Device | 同步、串口协议、充电输入和 DFU 路径。 |
 | 电源 | 带保护单节锂电 + TPS63031 | 可佩戴供电与 3.3 V 电源轨。 |
 | 充电 | MCP73831 | USB 供电锂电充电。 |
@@ -132,7 +138,7 @@ platformio test
 flowchart LR
     Speech["日常对话"] --> Mic["PDM 麦克风"]
     Mic --> MCU["STM32L452 固件"]
-    MCU --> SD["microSD WAV 文件"]
+    MCU --> SD["microSD Ogg Opus 文件"]
     USB["USB-C 串口"] --> Host["DayVault Sync 程序"]
     Host --> Folder["按设备区分的同步文件夹"]
     Folder --> Archive["转写 / 生活档案"]

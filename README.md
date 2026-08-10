@@ -18,7 +18,7 @@
   <img alt="MCU" src="https://img.shields.io/badge/MCU-STM32L452-205A4B?style=for-the-badge&logo=stmicroelectronics&logoColor=white" />
   <img alt="Firmware" src="https://img.shields.io/badge/firmware-PlatformIO-6B7FD7?style=for-the-badge" />
   <img alt="Desktop app" src="https://img.shields.io/badge/desktop-PySide6-2563EB?style=for-the-badge&logo=qt&logoColor=white" />
-  <img alt="Audio" src="https://img.shields.io/badge/audio-WAV%20logger-5F7F73?style=for-the-badge" />
+  <img alt="Audio" src="https://img.shields.io/badge/audio-Ogg%20Opus-5F7F73?style=for-the-badge" />
 </p>
 
 <p align="center">
@@ -58,14 +58,14 @@
 
 I started DayVault because I have been learning PCB design and wanted to build something personal with it: an all-day recording device that can capture every sentence I say and preserve each day as a life archive.
 
-The imagined workflow is simple and a little exciting: carry the microphone module during the day, plug it into the computer at night, let the Windows sync app pull the new `.WAV` files into a local folder, and later use speech-to-text plus AI summaries to automatically generate a written recap of each day.
+The imagined workflow is simple: carry the microphone module during the day, plug it into the computer at night, let the Windows sync app pull the new `.OPUS` recordings into a local folder, and later use speech-to-text plus AI summaries to prepare a written recap of the day.
 
 The repository keeps the full chain visible:
 
 | Layer | What is here |
 | --- | --- |
 | Hardware | EasyEDA project, exported netlist, schematic/PCB snapshots, pin maps, BOM, and hardware docs. |
-| Firmware | PlatformIO STM32 firmware sources and tests for recording, storage, USB protocol, WAV writing, and device behavior. |
+| Firmware | PlatformIO STM32 firmware sources and tests for recording, storage, USB protocol, Ogg Opus writing, and device behavior. |
 | Desktop sync | PySide6 Windows app with WinUSB bulk export, CRC32 validation, resume, and legacy CDC fallback. |
 | Protocol docs | Serial command reference for listing, downloading, time sync, DFU, battery diagnostics, and file management. |
 
@@ -112,9 +112,16 @@ platformio test
 - Uses `.part` temporary files and retries failed downloads up to three times.
 - Prefers `BULK2` WinUSB export, then falls back to `GET2` and legacy `DL2`.
 - Streams directly to disk and validates the device/host CRC before finalizing a file.
+- Downloads current `.OPUS` recordings and remains compatible with legacy `.WAV` files.
 - Keeps state in `%APPDATA%\DayVault\state\<serial>.json`.
 - Keeps logs in `%APPDATA%\DayVault\logs\app.log`.
 - Minimizes to the system tray instead of exiting when the tray is available.
+
+## Audio Recording
+
+Production recordings are standard Ogg Opus `.OPUS` files: the two microphones are adaptively fused to one mono stream at exactly 16 kHz, then encoded in 20 ms frames at a target 24 kbit/s constrained VBR restricted-SILK setting. Plan for about 265 MB per day. No parallel WAV or PCM original is kept; legacy `.WAV` recordings remain downloadable and removable by circular storage management.
+
+For file naming, clean-stop behavior, power-loss limits, and `OPUSSTAT`, see [Opus recording](Docs/09-Opus-Recording.md).
 
 ## Hardware At A Glance
 
@@ -122,7 +129,7 @@ platformio test
 | --- | --- | --- |
 | Main controller | STM32L452RCT6 | PDM capture, storage, USB, RTC, and power-state control. |
 | Microphones | 2 x SPH0655LM4H-1-8 | Digital PDM speech capture. |
-| Storage | microSD over SPI1 | Local `.WAV` recording storage. |
+| Storage | microSD over SPI1 | Local Ogg Opus `.OPUS` recording storage; legacy `.WAV` remains exportable. |
 | USB | USB-C full-speed device | Sync, serial protocol, charging input, and DFU path. |
 | Power | Protected single-cell LiPo + TPS63031 | Wearable power source and 3.3 V rail. |
 | Charging | MCP73831 | USB-powered Li-ion charging. |
@@ -134,7 +141,7 @@ platformio test
 flowchart LR
     Speech["Conversation"] --> Mic["PDM microphones"]
     Mic --> MCU["STM32L452 firmware"]
-    MCU --> SD["microSD WAV files"]
+    MCU --> SD["microSD Ogg Opus files"]
     USB["USB-C CDC / WinUSB"] --> Host["DayVault Sync app"]
     Host --> Folder["Per-device sync folder"]
     Folder --> Archive["Transcription / life archive"]
@@ -158,6 +165,7 @@ DayVault/
 - [Sync app documentation](tools/dayvault_sync/README.md)
 - [Hardware documentation index](Docs/README.md)
 - [Serial command reference](Docs/Serial-Command-Reference.md)
+- [Opus recording](Docs/09-Opus-Recording.md)
 - [High-speed transfer design and measurements](Docs/High-Speed-Transfer.md)
 - [Hardware overview](Docs/01-Hardware-Overview.md)
 - [MCU pinout](Docs/02-MCU-Pinout.md)
