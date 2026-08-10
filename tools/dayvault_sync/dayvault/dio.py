@@ -68,11 +68,11 @@ class DeviceConnection:
     def download_dl2(self, name: str, dest_path: str,
                      progress_cb=None, ack_byte: bytes = b"G", idle_ms: int = 5,
                      interrupt=None) -> int:
-        """DL2 chunked-ACK download of <name> to <dest_path>. Returns bytes written.
+        """Streaming DL2 download of <name> to <dest_path>. Returns bytes written.
 
-        `interrupt` may be a zero-arg callable; when it returns truthy the
-        download raises InterruptedError immediately (checked in the DLSTART
-        wait loop and the data/ACK loop).
+        The firmware streams continuously; the host just reads. `interrupt` may be
+        a zero-arg callable; when it returns truthy the download raises
+        InterruptedError immediately (checked in the DLSTART wait and read loops).
         """
         self._ser.reset_input_buffer()
         self._ser.write(f"DL2 {name}\r\n".encode())
@@ -84,7 +84,7 @@ class DeviceConnection:
         while time.time() < deadline:
             if interrupt and interrupt():
                 raise InterruptedError("download interrupted")
-            chunk = self._ser.read(4096)
+            chunk = self._ser.read(8192)
             if chunk:
                 buf += chunk
                 if b"FAIL" in buf:
@@ -100,44 +100,42 @@ class DeviceConnection:
                         buf = buf[nl + 1:]
                         break
             else:
-                time.sleep(0.02)
+                time.sleep(0.01)
         if size < 0:
             raise IOError(f"no DLSTART for {name}")
 
         total = 0
+        prev_to = self._ser.timeout
+        self._ser.timeout = 0.05          # short timeout for fast stalls
         with open(dest_path, "wb") as f:
             if buf:
                 take = min(len(buf), size)
                 f.write(buf[:take])
                 total += take
                 if take < len(buf):
-                    buf = buf[take:]  # trailing bytes beyond size: leave on stream for next reads
-                    if len(buf) > 0:
-                        # push back is impossible; extra bytes beyond size are rare -> drop them
-                        pass
-            no_data = 0
-            deadline = time.time() + 300.0
+                    # trailing bytes beyond size are rare -> drop them
+                    pass
+            stall = 0
+            deadline = time.time() + 600.0
             while total < size and time.time() < deadline:
                 if interrupt and interrupt():
+                    self._ser.timeout = prev_to
                     raise InterruptedError("download interrupted")
                 remain = size - total
-                n = self._ser.in_waiting
-                if n > 0:
-                    n = min(n, remain)
-                    chunk = self._ser.read(n)
-                    if chunk:
-                        f.write(chunk)
-                        total += len(chunk)
-                        no_data = 0
-                        if progress_cb:
-                            progress_cb(total, size)
+                n = min(32768, remain)
+                chunk = self._ser.read(n)          # blocking read, large chunk
+                if chunk:
+                    f.write(chunk)
+                    total += len(chunk)
+                    stall = 0
+                    if progress_cb:
+                        progress_cb(total, size)
                 else:
-                    no_data += 1
-                    if no_data >= max(1, int(idle_ms / 5)):   # ACK after ~idle_ms of no data
+                    stall += 1
+                    if stall > 100:                # ~5 s with no data -> nudge
                         self._ser.write(ack_byte)
-                        no_data = 0
-                    time.sleep(0.005)
+                        stall = 0
+        self._ser.timeout = prev_to
         if total != size:
             raise IOError(f"incomplete download {name}: {total}/{size}")
-        self._ser.write(ack_byte)
         return total

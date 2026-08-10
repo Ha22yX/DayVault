@@ -321,7 +321,7 @@ static void download_file(const char* fname)
 static void download_file2(const char* fname)
 {
     FIL f;
-    uint8_t buf[4096];
+    uint8_t buf[16384];
     UINT rd = 0;
     char path[32];
 
@@ -335,15 +335,11 @@ static void download_file2(const char* fname)
         dbg_iwdg_kick();
         if (f_read(&f, buf, sizeof(buf), &rd) != FR_OK || rd == 0) break;
         total += rd;
+        /* Stream continuously; Serial.write blocks when the CDC TX ring is full,
+           providing natural backpressure without per-chunk ACK round-trips. */
         Serial.write(buf, rd);
-        Serial.flush();
-        uint32_t t0 = millis();
-        while (!Serial.available()) {
-            dbg_iwdg_kick();
-            if ((millis() - t0) > 5000) { f_close(&f); Serial.println("DL2 ACK timeout"); return; }
-        }
-        while (Serial.available()) Serial.read();
     }
+    Serial.flush();
     f_close(&f);
     Serial.print("DLEND read="); Serial.println(total);
 }
@@ -777,6 +773,48 @@ loop_restart:
                         lfn_bringup_test();
                     } else if (strncmp(line, "CAPT", 4) == 0) {
                         record_test(5);
+                    } else if (strncmp(line, "SDSPEED", 7) == 0) {
+                        DIR dir; FILINFO fno; char fname[40]; fname[0] = 0;
+                        uint64_t bestsz = 0;
+                        if (f_opendir(&dir, "0:/") == FR_OK) {
+                            while (f_readdir(&dir, &fno) == FR_OK && fno.fname[0]) {
+                                if (fno.fattrib & AM_DIR) continue;
+                                if (fno.fsize > bestsz) { bestsz = fno.fsize; strncpy(fname, fno.fname, sizeof(fname) - 1); }
+                            }
+                            f_closedir(&dir);
+                        }
+                        FIL f2;
+                        uint8_t big[16384];
+                        char p2[48];
+                        snprintf(p2, sizeof(p2), "0:/%s", fname);
+                        if (f_open(&f2, p2, FA_READ) != FR_OK) { Serial.println("SDSPEED open FAIL"); return; }
+                        uint32_t rd2 = 0, n2 = 0;
+                        uint32_t t0 = millis();
+                        while (rd2 < 2u * 1024u * 1024u) {
+                            dbg_iwdg_kick();
+                            UINT r2;
+                            if (f_read(&f2, big, sizeof(big), &r2) != FR_OK || r2 == 0) break;
+                            rd2 += r2; n2++;
+                        }
+                        uint32_t dt = millis() - t0;
+                        f_close(&f2);
+                        Serial.print("SDSPEED bytes="); Serial.print(rd2);
+                        Serial.print(" ms="); Serial.print(dt);
+                        Serial.print(" KB/s="); Serial.println(dt ? (rd2 * 1000u / dt / 1024u) : 0u);
+                    } else if (strncmp(line, "SPEED", 5) == 0) {
+                        static uint8_t sp_buf[2048];
+                        for (int i = 0; i < 2048; i++) sp_buf[i] = (uint8_t)i;
+                        uint32_t sp_total = 2u * 1024u * 1024u;
+                        Serial.print("SPEEDSTART "); Serial.println(sp_total);
+                        for (uint32_t sent = 0; sent < sp_total; ) {
+                            dbg_iwdg_kick();
+                            uint32_t n = 2048;
+                            if (sent + n > sp_total) n = sp_total - sent;
+                            Serial.write(sp_buf, n);
+                            sent += n;
+                        }
+                        Serial.flush();
+                        Serial.println("SPEEDEND");
                     } else if (strncmp(line, "BAT10", 5) == 0) {
                         uint32_t sum = 0, cnt = 0, mn = 0xFFFFFFFF, mx = 0;
                         uint32_t t0 = millis();
