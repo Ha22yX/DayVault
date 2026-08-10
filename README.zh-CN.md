@@ -1,191 +1,194 @@
 <h1 align="center">DayVault</h1>
 
 <p align="center">
-  一个为自己设计的全天语音记录器：随身记录日常对话，晚上导出并转成文字，留下可以长期回看的生活记录。
+  一个随身麦克风模块和 Windows 同步程序，用来把每天的音频记录沉淀成本地、可检索的生活档案。
 </p>
 
 <p align="center">
   <a href="README.md">English</a> &middot;
+  <a href="#快速开始">快速开始</a> &middot;
+  <a href="#项目图片">项目图片</a> &middot;
+  <a href="tools/dayvault_sync/README.md">同步程序</a> &middot;
   <a href="Docs/README.md">硬件文档</a> &middot;
-  <a href="Docs/06-Known-Issues.md">已知问题</a> &middot;
-  <a href="CONTRIBUTING.md">参与贡献</a>
+  <a href="Docs/Serial-Command-Reference.md">串口协议</a>
 </p>
 
 <p align="center">
-  <img alt="状态：设计中" src="https://img.shields.io/badge/status-design%20in%20progress-D97706?style=flat-square" />
-  <img alt="主控：STM32L452" src="https://img.shields.io/badge/MCU-STM32L452-205A4B?style=flat-square&logo=stmicroelectronics&logoColor=white" />
-  <img alt="音频目标：双 PDM" src="https://img.shields.io/badge/audio-dual%20PDM-6B7FD7?style=flat-square" />
-  <img alt="EDA：EasyEDA Pro" src="https://img.shields.io/badge/EDA-EasyEDA%20Pro-2563EB?style=flat-square" />
-  <img alt="生产状态：尚不可投产" src="https://img.shields.io/badge/manufacturing-not%20ready-B91C1C?style=flat-square" />
+  <img alt="状态" src="https://img.shields.io/badge/status-active%20prototype-D97706?style=for-the-badge" />
+  <img alt="主控" src="https://img.shields.io/badge/MCU-STM32L452-205A4B?style=for-the-badge&logo=stmicroelectronics&logoColor=white" />
+  <img alt="固件" src="https://img.shields.io/badge/firmware-PlatformIO-6B7FD7?style=for-the-badge" />
+  <img alt="桌面程序" src="https://img.shields.io/badge/desktop-PySide6-2563EB?style=for-the-badge&logo=qt&logoColor=white" />
+  <img alt="音频" src="https://img.shields.io/badge/audio-WAV%20logger-5F7F73?style=for-the-badge" />
 </p>
 
 <p align="center">
-  <img src=".github/assets/readme-hero.svg" alt="DayVault 硬件概览：双 PDM 采集、STM32L452 控制、microSD 存储、USB-C 导出与音频转文字归档" />
+  <img src=".github/assets/readme-hero.svg" alt="DayVault 硬件与同步流程概览" />
 </p>
 
-## 为什么做 DayVault
+## 最新改动
 
-我想有一个足够小、可以全天随身携带的设备，持续记录我生命中发生的事情，包括我说过的话、
-参与的对话和容易被忘记的日常片段。每天晚上，我可以导出音频，使用 AI 转成文字，并按日期
-保存为可以搜索和回看的生活记录。
+DayVault 现在不只是硬件设计存档。最新版本已经加入了面向麦克风模块的 Windows 桌面同步程序：每天晚上把设备插到电脑上，程序会自动识别设备、同步设备时间、列出新增录音，并把音频下载到按设备序列号区分的电脑文件夹里。
 
-这个项目当前以硬件为先。仓库保存了 EasyEDA 工程、通过 API 导出的网表、完整 MCU
-引脚表、上电调试流程，以及明确列出的未解决风险。仓库目前**没有**可直接使用的量产
-固件，也**没有**可直接投产的 PCB 输出。
+最近的仓库变化包括：
 
-| 设计目标 | 当前方案 |
+- 新增 PySide6 `DayVault Sync` 桌面程序，包含设备选择、文件表格、同步文件夹选择、托盘驻留和立即同步按钮。
+- 默认英文界面，并支持在右上角切换中文，语言选择会保存到配置。
+- 录音文件按 `REC-YYYYMMDD-HHMM...WAV` 时间戳从新到旧排序。
+- 设备插入/移除、同步开始/结束/错误会写入 `%APPDATA%\DayVault\logs\app.log`。
+- 通过 `tools/dayvault_sync/build_exe.bat` 支持打包成单文件 EXE。
+- 固件侧已经持续加入录音、时间戳命名、USB 串口协议、DFU 入口、电池处理和循环录音相关工作。
+
+## 项目图片
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src=".github/assets/dayvault-sync-app.png" alt="DayVault Sync Windows 程序正在从麦克风模块下载音频" />
+      <br />
+      <strong>Windows 同步程序。</strong> 通过 USB 串口识别麦克风模块，并把夜间插入后的录音同步到电脑。
+    </td>
+    <td width="50%" align="center">
+      <img src=".github/assets/dayvault-mic-module.jpg" alt="通过 USB-C 连接的 DayVault 麦克风模块原型" />
+      <br />
+      <strong>麦克风模块。</strong> 用于本地音频采集实验的紧凑电路板与电池原型。
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src=".github/assets/dayvault-schematic.png" alt="DayVault 原理图，包含 STM32L452、PDM 麦克风、microSD、USB-C、充电、RTC 与电源电路" />
+      <br />
+      <strong>原理图。</strong> 当前 EasyEDA 电气设计，用于记录和审查录音模块硬件。
+    </td>
+    <td width="50%" align="center">
+      <img src=".github/assets/dayvault-pcb-layout.png" alt="DayVault EasyEDA PCB 布局" />
+      <br />
+      <strong>PCB 布局。</strong> 当前板级布局快照，用于硬件审查和上电计划。
+    </td>
+  </tr>
+</table>
+
+## 为什么需要它
+
+DayVault 的目标工作流很简单：白天随身携带一个小型录音模块，晚上把它插到电脑上，然后让桌面同步程序把新增 `.WAV` 文件拉到本地档案中。之后可以在设备外完成语音转文字、索引和长期保存。
+
+仓库保留了完整链路：
+
+| 层 | 仓库中包含的内容 |
 | --- | --- |
-| 可佩戴、全天记录 | 400 mAh 带保护单节锂电池与低功耗 STM32L452 |
-| 重点保证人声可懂度，而非录音棚音质 | 2 颗 SPH0655LM4H-1-8 PDM 麦克风 |
-| 数据保存在本地且可直接检查 | SPI1 连接的可拆卸 microSD |
-| 一个接口完成充电和数据传输 | USB-C、USB Full Speed、ROM DFU 与约 100 mA 充电 |
-| 文件拥有可靠时间戳 | STM32 RTC 与 32.768 kHz 晶振 |
-| 在电脑端建立人生档案 | 导出音频后，在设备外完成转写和索引 |
+| 硬件 | EasyEDA 工程、导出网表、原理图/PCB 截图、引脚表、BOM 和硬件文档。 |
+| 固件 | PlatformIO STM32 固件源码，以及录音、存储、USB 协议、WAV 写入和设备行为相关测试。 |
+| 桌面同步 | PySide6 Windows 程序，监听 DayVault USB 串口设备并下载未同步音频。 |
+| 协议文档 | 串口命令参考，覆盖文件列表、下载、时间同步、DFU、电池诊断和文件管理。 |
 
-## 硬件设计图
+## 快速开始
 
-下面两张图是当前 EasyEDA 工程的真实设计快照，用于展示和记录开发进度。它们不是生产文件，
-目前仍存在 [Docs/06-Known-Issues.md](Docs/06-Known-Issues.md) 中列出的阻塞问题。
+### 运行 Windows 同步程序
 
-### 原理图
+```powershell
+cd tools/dayvault_sync
+pip install -r requirements.txt
+python main.py
+```
 
-![DayVault 完整原理图，包含 STM32L452、双 PDM 麦克风、microSD、USB-C、充电、电源转换、RTC 与保护电路](.github/assets/dayvault-schematic.png)
+打包成单文件 EXE：
 
-*当前完整系统原理图。*
+```bat
+cd tools\dayvault_sync
+build_exe.bat
+```
 
-### PCB 布局
+打包产物位于 `tools\dayvault_sync\dist\DayVaultSync.exe`。
 
-![DayVault 当前 EasyEDA PCB 布局](.github/assets/dayvault-pcb-layout.png)
+### 构建固件
 
-*当前 PCB 布局快照；布线、地平面和 DRC 问题仍需继续修改。*
+```powershell
+cd firmware
+platformio run
+```
+
+当 PlatformIO 环境可用时运行固件测试：
+
+```powershell
+cd firmware
+platformio test
+```
+
+## 同步程序行为
+
+- 监听 USB 串口，识别 DayVault 设备 VID/PID。
+- 设备插入后自动开始同步。
+- 每次同步都会把电脑时间和本地时区偏移发送到设备。
+- 读取设备录音列表，并下载新增或大小变化的文件。
+- 文件写入 `<同步文件夹>\<设备序列号>\`。
+- 下载时使用 `.part` 临时文件，失败最多重试 3 次。
+- 每台设备的下载状态保存在 `%APPDATA%\DayVault\state\<序列号>.json`。
+- 运行日志保存在 `%APPDATA%\DayVault\logs\app.log`。
+- 系统托盘可用时，关闭窗口会最小化到托盘而不是退出。
 
 ## 硬件概览
 
 | 子系统 | 当前器件 | 作用 |
 | --- | --- | --- |
-| 主控 | STM32L452RCT6 | DFSDM/PDM 采集、存储、USB、RTC 与功耗状态控制 |
-| 麦克风 | 2 x SPH0655LM4H-1-8 | 1.8 V PDM 人声采集，两颗设置为相反声道选择 |
-| 电平转换 | TXU0202DCUR | 在 1.8 V PDM 与 3.3 V MCU 逻辑之间做固定方向转换 |
-| 存储 | TF-01A microSD 卡座 | 通过 SPI1 保存音频 |
-| 主电源 | TPS63031DSKR | 将单节锂电池升降压为固定 3.3 V |
-| 麦克风电源 | XC6206P182MR | 固定 1.8 V LDO |
-| 充电 | MCP73831T-2ACI/OT | 单节锂电线性充电，设定电流约 100 mA |
-| USB 保护 | USBLC6-2SC6 | USB D+、D- 静电保护 |
-| 计时 | 32.768 kHz 晶振 | 在 3.3 V 备份域仍供电时维持 STM32 RTC |
-| 计划使用的电池 | 带保护 802525，3.7 V，400 mAh | 可佩戴电源；实际续航仍需实测 |
+| 主控 | STM32L452RCT6 | PDM 采集、存储、USB、RTC 与功耗状态控制。 |
+| 麦克风 | 2 x SPH0655LM4H-1-8 | 数字 PDM 人声采集。 |
+| 存储 | SPI1 连接 microSD | 本地 `.WAV` 录音存储。 |
+| USB | USB-C Full Speed Device | 同步、串口协议、充电输入和 DFU 路径。 |
+| 电源 | 带保护单节锂电 + TPS63031 | 可佩戴供电与 3.3 V 电源轨。 |
+| 充电 | MCP73831 | USB 供电锂电充电。 |
+| 时间 | STM32 RTC + 32.768 kHz 晶振 | 支持带时间戳的录音文件名。 |
 
 ## 系统架构
 
 ```mermaid
 flowchart LR
-    Speech["对话"] --> Mic["2 x PDM 麦克风"]
-    Mic --> Shift["TXU0202 电平转换"]
-    Shift --> MCU["STM32L452 / DFSDM"]
-    MCU --> SD["microSD 音频文件"]
-    USB["USB-C"] --> ESD["USB 静电保护"]
-    ESD --> MCU
-    USB --> Charger["MCP73831 充电"]
-    Charger --> Battery["带保护单节锂电池"]
-    Battery --> Power["TPS63031 3.3 V"]
-    Power --> MCU
-    Power --> SD
-    SD --> Host["电脑导出"]
-    Host --> Archive["语音转文字档案"]
+    Speech["日常对话"] --> Mic["PDM 麦克风"]
+    Mic --> MCU["STM32L452 固件"]
+    MCU --> SD["microSD WAV 文件"]
+    USB["USB-C 串口"] --> Host["DayVault Sync 程序"]
+    Host --> Folder["按设备区分的同步文件夹"]
+    Folder --> Archive["转写 / 生活档案"]
+    Host --> MCU
 ```
-
-## 当前状态
-
-DayVault 目前是一份**设计快照**，还不是完成的录音设备。文档明确区分“工程中已经
-保存的连接”和“下一版必须修改的内容”，方便后续固件与 PCB 开发从确定状态开始。
-
-| 范围 | 状态 | 依据 / 下一步 |
-| --- | --- | --- |
-| 原理图 | 已归档 | EasyEDA 可编辑源文件和导出网表已经纳入版本管理 |
-| 引脚文档 | 已记录 | 包含 STM32L452 完整 64 引脚表和按网络整理的连接表 |
-| PDM 布线 | 已更新、未实测 | PDM 数据已接到 `PB12/DFSDM1_DATIN1`，PB1 为 NC |
-| 双麦克风立体声 | 需要固件与样机验证 | Channel 1 直连，Channel 0 重定向，并使用相反采样边沿 |
-| 网表一致性 | 阻塞 | 原理图和 PCB 均为 50 个器件，但严格 DRC 仍报告 1 个网表不一致 |
-| PCB 布局 | 阻塞 | 仍有 58 个间距错误，并需处理地平面、电源、USB 和 SWD 调试入口 |
-| 固件 | 尚未纳入仓库 | 当前只有固件设计指南，没有可运行实现 |
-| 生产 | 尚不可投产 | 不要基于这一版生成或下单生产文件 |
-
-所有阻塞项和设计风险统一记录在
-[Docs/06-Known-Issues.md](Docs/06-Known-Issues.md)。它是版本放行门槛，不是随手列出的愿望清单。
 
 ## 仓库结构
 
 ```text
 DayVault/
-|-- EDA/
-|   |-- DayVault.eprj2          EasyEDA Pro 工程快照
-|   |-- DayVault.netlist.json   通过 API 导出的原理图网表
-|   `-- Backups/                EasyEDA 自动备份
-|-- Docs/
-|   |-- 00-开发速查.md           中文开发入口
-|   |-- 01-Hardware-Overview.md 系统架构与电源域
-|   |-- 02-MCU-Pinout.md        面向固件的完整引脚关系
-|   |-- 03-Component-Pinout.md  主要器件连接关系
-|   |-- 05-Bringup-and-Test.md  安全上电与验证流程
-|   |-- 06-Known-Issues.md      阻塞项、限制与必要修改
-|   |-- 07-BOM.md               器件和无源元件参数
-|   |-- 08-Net-Map.md           按网络整理的端点关系
-|   `-- 09-USB-DFU-Entry-Design.md  USB DFU 自动进入设计
-|-- CONTRIBUTING.md
+|-- EDA/                         EasyEDA 工程与导出网表
+|-- Docs/                        硬件和协议文档
+|-- firmware/                    PlatformIO STM32 固件
+|-- tools/dayvault_sync/          Windows 桌面同步程序
 |-- README.md
 `-- README.zh-CN.md
 ```
 
-## 从这里开始
+## 常用入口
 
-1. 先阅读[文档索引](Docs/README.md)和[已知问题清单](Docs/06-Known-Issues.md)。
-2. 使用 EasyEDA Pro 打开 [EDA/DayVault.eprj2](EDA/DayVault.eprj2)，检查可编辑工程快照。
-3. 将 [EDA/DayVault.netlist.json](EDA/DayVault.netlist.json) 作为审查产物，不要把它当作
-   可编辑源文件的替代品。
-4. 给样机上电前，严格执行 [Docs/05-Bringup-and-Test.md](Docs/05-Bringup-and-Test.md)。
-5. 固件引脚以 [Docs/02-MCU-Pinout.md](Docs/02-MCU-Pinout.md) 为准；原理图修改后必须同步
-   更新文档。
+- [同步程序文档](tools/dayvault_sync/README.md)
+- [硬件文档索引](Docs/README.md)
+- [串口命令参考](Docs/Serial-Command-Reference.md)
+- [硬件概览](Docs/01-Hardware-Overview.md)
+- [MCU 引脚表](Docs/02-MCU-Pinout.md)
+- [BOM](Docs/07-BOM.md)
+- [贡献指南](CONTRIBUTING.md)
 
-## 存储量估算
+## 当前状态
 
-下面只是容量估算，不代表这些编码已经实现：
+DayVault 是一个正在推进的原型项目，不是已经完成的消费级产品。硬件、固件和同步程序仍在一起演进。请把这个仓库视为开发记录和工作原型源码，而不是量产发布包。
 
-| 录音格式 | 连续 24 小时约占用 | 取舍 |
-| --- | ---: | --- |
-| 16 kHz、16-bit 单声道 PCM | 2.76 GB | 最容易采集、恢复和排查 |
-| IMA ADPCM 单声道 | 691 MB | 用较低 MCU 复杂度换取更小体积 |
-| Opus 12-24 kbit/s | 130-259 MB | 存储效率最高，但固件工作量明显更大 |
+当前需要注意：
 
-实际续航和清晰度还会受到固件工作周期、microSD 写入行为、转换效率、麦克风机械结构、
-外壳与编码方式影响，必须在整机样品上测量。
-
-## 调试路线
-
-- [ ] 解决 DRC 中剩余的网表不一致，并重新导出同步网表。
-- [ ] 清除电气和生产相关 DRC 问题。
-- [ ] 增加连续地平面，重新审查转换器、电源、USB 和 microSD 布线。
-- [ ] 增加可接触的 SWDIO、SWCLK、NRST、3V3 和 GND 救援焊盘。
-- [ ] 使用限流电源验证所有电源轨和充电行为。
-- [ ] 先把一颗麦克风采集到 RAM，再用多张 microSD 验证单声道文件。
-- [ ] 先验证 Channel 1 单声道，再验证重定向 Channel 0 和双路同时采集。
-- [ ] 实现掉电前关文件、电池阈值、RTC 对时和 USB 导出。
-- [ ] 实测 24 小时能耗、温升、声学结构和真实对话可懂度。
+- 录音和同步行为仍应结合真实设备与日志验证。
+- 固件、电池阈值、存储行为、声学质量和长时间可靠性仍需要实测上电证据。
+- 桌面同步程序当前面向 Windows；源码运行依赖 Python、PySide6 和 pyserial。
+- 项目目前还没有选择开源许可证。
 
 ## 隐私与安全
 
-DayVault 用于个人记录。在不同地区和使用场景中，录制他人可能需要明确告知或取得同意。
-在采集敏感对话前，应为原始音频和转写内容设置严格访问控制，并先确定保存期限。
+DayVault 用于个人记录。在不同地区和使用场景中，录制他人可能需要明确告知或取得同意。采集敏感对话前，请为原始音频和转写内容设置严格访问控制，并先确定保存期限。
 
-这是一套尚未验证、包含锂电池与充电器的可佩戴电子设计。必须使用带保护电芯、检查极性、
-提供导线应力释放并测试充电温度。在电气和热行为尚未确认前，不要佩戴样机，也不要让它在
-无人看管时充电或工作。
-
-## 参与贡献
-
-欢迎提交硬件审查、文档纠错、固件实验和可重复的上电测试结果。发起 Pull Request 前请先阅读
-[CONTRIBUTING.md](CONTRIBUTING.md)。硬件结论应附带证据，例如网络名、位号、数据手册章节、
-DRC 输出、示波器波形或可复现测试步骤。
+这是一套尚未完全验证、包含锂电池与充电器的可佩戴电子原型。必须使用带保护电芯、检查极性、提供导线应力释放并测试充电温度。在电气和热行为尚未确认前，不要让早期硬件无人看管地充电或录音。
 
 ## 许可证
 
-项目目前尚未选择开源许可证。在后续添加许可证之前，所有权利仍归仓库所有者；公开的设计
-文件可以被查看，但并不自动授予复用、修改或再分发的许可。
+项目目前尚未选择开源许可证。在后续添加许可证之前，所有权利仍归仓库所有者；公开的设计和源码文件可以被查看，但并不自动授予复用、修改或再分发的许可。

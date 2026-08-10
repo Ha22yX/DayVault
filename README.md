@@ -1,205 +1,194 @@
 <h1 align="center">DayVault</h1>
 
 <p align="center">
-  A personal wearable voice-logging project for recording everyday conversations, exporting them at night, and turning them into a written record of life.
+  A wearable microphone module and Windows sync app for turning everyday audio into a local, searchable life archive.
 </p>
 
 <p align="center">
   <a href="README.zh-CN.md">简体中文</a> &middot;
+  <a href="#quickstart">Quickstart</a> &middot;
+  <a href="#project-gallery">Gallery</a> &middot;
+  <a href="tools/dayvault_sync/README.md">Sync app</a> &middot;
   <a href="Docs/README.md">Hardware docs</a> &middot;
-  <a href="Docs/Serial-Command-Reference.md">Serial command reference</a> &middot;
-  <a href="Docs/06-Known-Issues.md">Known issues</a> &middot;
-  <a href="CONTRIBUTING.md">Contributing</a>
+  <a href="Docs/Serial-Command-Reference.md">Serial protocol</a>
 </p>
 
 <p align="center">
-  <img alt="Status: design in progress" src="https://img.shields.io/badge/status-design%20in%20progress-D97706?style=flat-square" />
-  <img alt="MCU: STM32L452" src="https://img.shields.io/badge/MCU-STM32L452-205A4B?style=flat-square&logo=stmicroelectronics&logoColor=white" />
-  <img alt="Audio target: dual PDM" src="https://img.shields.io/badge/audio-dual%20PDM-6B7FD7?style=flat-square" />
-  <img alt="EDA: EasyEDA Pro" src="https://img.shields.io/badge/EDA-EasyEDA%20Pro-2563EB?style=flat-square" />
-  <img alt="Manufacturing status: not ready" src="https://img.shields.io/badge/manufacturing-not%20ready-B91C1C?style=flat-square" />
+  <img alt="Status" src="https://img.shields.io/badge/status-active%20prototype-D97706?style=for-the-badge" />
+  <img alt="MCU" src="https://img.shields.io/badge/MCU-STM32L452-205A4B?style=for-the-badge&logo=stmicroelectronics&logoColor=white" />
+  <img alt="Firmware" src="https://img.shields.io/badge/firmware-PlatformIO-6B7FD7?style=for-the-badge" />
+  <img alt="Desktop app" src="https://img.shields.io/badge/desktop-PySide6-2563EB?style=for-the-badge&logo=qt&logoColor=white" />
+  <img alt="Audio" src="https://img.shields.io/badge/audio-WAV%20logger-5F7F73?style=for-the-badge" />
 </p>
 
 <p align="center">
-  <img src=".github/assets/readme-hero.svg" alt="DayVault hardware overview showing dual PDM capture, STM32L452 control, microSD storage, USB-C export, and audio-to-text archival" />
+  <img src=".github/assets/readme-hero.svg" alt="DayVault hardware and sync workflow overview" />
 </p>
 
-## Why I Built DayVault
+## What Changed Recently
 
-I want a small device that can stay with me throughout the day and continuously record my
-life: what I say, the conversations I take part in, and everyday moments that might otherwise
-be forgotten. Each night, I can export the audio, transcribe it with AI, and save it as a
-dated, searchable record that I can revisit later.
+DayVault is no longer only a hardware design archive. The latest work adds a Windows desktop sync tool for the microphone module: plug the device into the computer at night, and the app detects it, synchronizes its clock, lists new recordings, and downloads audio files into a per-device folder.
 
-The project is intentionally hardware-first. This repository preserves the EasyEDA design,
-an API-exported netlist, a complete MCU pin map, bring-up guidance, and an explicit list of
-unresolved risks. It does **not** yet contain production firmware or manufacturing-ready PCB
-outputs.
+Recent repository updates include:
 
-| Design goal | Current approach |
+- A PySide6 `DayVault Sync` desktop app with a device selector, file table, sync folder picker, tray residence, and manual sync button.
+- English as the default UI language, with a saved Chinese language switch.
+- Newest-first recording lists based on timestamped `REC-YYYYMMDD-HHMM...WAV` filenames.
+- Device add/remove and sync start/finish/error logging to `%APPDATA%\DayVault\logs\app.log`.
+- Single-EXE packaging support through `tools/dayvault_sync/build_exe.bat`.
+- Firmware-side recording, timestamp naming, USB serial protocol, DFU entry, battery handling, and circular-recording work tracked in recent commits.
+
+## Project Gallery
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src=".github/assets/dayvault-sync-app.png" alt="DayVault Sync Windows app downloading audio from the microphone module" />
+      <br />
+      <strong>Windows sync app.</strong> Detects the microphone module over USB serial and downloads nightly recordings to the computer.
+    </td>
+    <td width="50%" align="center">
+      <img src=".github/assets/dayvault-mic-module.jpg" alt="DayVault microphone module prototype connected over USB-C" />
+      <br />
+      <strong>Microphone module.</strong> A compact board and battery prototype used for local audio capture experiments.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src=".github/assets/dayvault-schematic.png" alt="DayVault schematic with STM32L452, PDM microphones, microSD, USB-C, charger, RTC, and power circuits" />
+      <br />
+      <strong>Schematic.</strong> The current EasyEDA electrical design for the recorder module.
+    </td>
+    <td width="50%" align="center">
+      <img src=".github/assets/dayvault-pcb-layout.png" alt="DayVault PCB layout in EasyEDA" />
+      <br />
+      <strong>PCB layout.</strong> The board layout snapshot used for review and bring-up planning.
+    </td>
+  </tr>
+</table>
+
+## Why This Exists
+
+DayVault is built around a simple workflow: carry a small audio recorder during the day, plug it into a computer at night, and let the desktop sync app pull the new `.WAV` files into a local archive. Those files can then be transcribed and indexed off-device.
+
+The repository keeps the full chain visible:
+
+| Layer | What is here |
 | --- | --- |
-| Wearable, all-day capture | 400 mAh protected single-cell LiPo and low-power STM32L452 |
-| Intelligible speech rather than studio audio | 2 x SPH0655LM4H-1-8 PDM microphones |
-| Local and inspectable storage | Removable microSD over SPI1 |
-| One connector for charging and data | USB-C with USB Full Speed, ROM DFU, and 100 mA charging |
-| Reliable timestamps | STM32 RTC with a 32.768 kHz crystal |
-| Host-side life archive | Export audio, then transcribe and index it off-device |
+| Hardware | EasyEDA project, exported netlist, schematic/PCB snapshots, pin maps, BOM, and hardware docs. |
+| Firmware | PlatformIO STM32 firmware sources and tests for recording, storage, USB protocol, WAV writing, and device behavior. |
+| Desktop sync | PySide6 Windows app that watches for the DayVault USB serial device and downloads unsynced audio files. |
+| Protocol docs | Serial command reference for listing, downloading, time sync, DFU, battery diagnostics, and file management. |
 
-## Hardware Design
+## Quickstart
 
-These images show the current EasyEDA design snapshot. They document the work in progress;
-they are not manufacturing files and still contain the blockers listed in
-[Docs/06-Known-Issues.md](Docs/06-Known-Issues.md).
+### Run The Windows Sync App
 
-### Schematic
+```powershell
+cd tools/dayvault_sync
+pip install -r requirements.txt
+python main.py
+```
 
-![DayVault schematic showing the STM32L452, dual PDM microphones, microSD, USB-C, charging, power conversion, RTC, and protection circuits](.github/assets/dayvault-schematic.png)
+Build a single executable:
 
-*Current full-system schematic.*
+```bat
+cd tools\dayvault_sync
+build_exe.bat
+```
 
-### PCB Layout
+The packaged app is written to `tools\dayvault_sync\dist\DayVaultSync.exe`.
 
-![Current DayVault PCB layout in EasyEDA](.github/assets/dayvault-pcb-layout.png)
+### Build Firmware
 
-*Current PCB layout snapshot. Routing, ground plane, and DRC issues still require revision.*
+```powershell
+cd firmware
+platformio run
+```
+
+Run firmware tests when PlatformIO environments are available:
+
+```powershell
+cd firmware
+platformio test
+```
+
+## Sync App Behavior
+
+- Watches USB serial ports for the DayVault device VID/PID.
+- Starts sync automatically when a device is inserted.
+- Sends host time and local timezone offset to the device on each sync.
+- Lists remote recordings and downloads files that are new or whose size changed.
+- Writes files to `<sync_folder>\<device_serial>\`.
+- Uses `.part` temporary files and retries failed downloads up to three times.
+- Keeps state in `%APPDATA%\DayVault\state\<serial>.json`.
+- Keeps logs in `%APPDATA%\DayVault\logs\app.log`.
+- Minimizes to the system tray instead of exiting when the tray is available.
 
 ## Hardware At A Glance
 
 | Subsystem | Selected part | Role |
 | --- | --- | --- |
-| Main controller | STM32L452RCT6 | DFSDM/PDM capture, storage, USB, RTC, and power-state control |
-| Microphones | 2 x SPH0655LM4H-1-8 | 1.8 V PDM speech capture with opposite channel selection |
-| Level translation | TXU0202DCUR | Fixed-direction translation between 1.8 V PDM and 3.3 V MCU logic |
-| Storage | TF-01A microSD socket | SPI1 audio storage |
-| Main power | TPS63031DSKR | Fixed 3.3 V buck-boost from the LiPo cell |
-| Microphone power | XC6206P182MR | Fixed 1.8 V LDO |
-| Charging | MCP73831T-2ACI/OT | Single-cell linear charger, programmed for about 100 mA |
-| USB protection | USBLC6-2SC6 | ESD protection for USB D+ and D- |
-| Timekeeping | 32.768 kHz crystal | STM32 RTC clock while the 3.3 V backup domain is alive |
-| Intended battery | Protected 802525 LiPo, 3.7 V, 400 mAh | Wearable power source; runtime still requires measurement |
+| Main controller | STM32L452RCT6 | PDM capture, storage, USB, RTC, and power-state control. |
+| Microphones | 2 x SPH0655LM4H-1-8 | Digital PDM speech capture. |
+| Storage | microSD over SPI1 | Local `.WAV` recording storage. |
+| USB | USB-C full-speed device | Sync, serial protocol, charging input, and DFU path. |
+| Power | Protected single-cell LiPo + TPS63031 | Wearable power source and 3.3 V rail. |
+| Charging | MCP73831 | USB-powered Li-ion charging. |
+| Timekeeping | STM32 RTC + 32.768 kHz crystal | Timestamped recording names. |
 
 ## System Architecture
 
 ```mermaid
 flowchart LR
-    Speech["Conversation"] --> Mic["2 x PDM microphones"]
-    Mic --> Shift["TXU0202 level translator"]
-    Shift --> MCU["STM32L452 / DFSDM"]
-    MCU --> SD["microSD audio files"]
-    USB["USB-C"] --> ESD["USB ESD protection"]
-    ESD --> MCU
-    USB --> Charger["MCP73831 charger"]
-    Charger --> Battery["Protected 1-cell LiPo"]
-    Battery --> Power["TPS63031 3.3 V"]
-    Power --> MCU
-    Power --> SD
-    SD --> Host["Host export"]
-    Host --> Archive["Speech-to-text archive"]
+    Speech["Conversation"] --> Mic["PDM microphones"]
+    Mic --> MCU["STM32L452 firmware"]
+    MCU --> SD["microSD WAV files"]
+    USB["USB-C serial"] --> Host["DayVault Sync app"]
+    Host --> Folder["Per-device sync folder"]
+    Folder --> Archive["Transcription / life archive"]
+    Host --> MCU
 ```
-
-## Current Status
-
-DayVault is a **design snapshot**, not a finished recorder. The documentation separates
-saved connections from proposed revisions so future firmware and PCB work can start from a
-known state.
-
-| Area | Status | Evidence / next action |
-| --- | --- | --- |
-| Schematic | Archived | EasyEDA source and exported netlist are versioned |
-| Pin documentation | Documented | Complete STM32L452 64-pin map and net-centric map are included |
-| PDM routing | Updated, unvalidated | PDM data is on `PB12/DFSDM1_DATIN1`; PB1 is NC |
-| Dual-microphone stereo | Firmware/bench validation required | Use Channel 1 direct plus redirected Channel 0 on opposite edges |
-| Netlist reconciliation | Blocked | Schematic and PCB each contain 50 parts, but strict DRC still reports one netlist mismatch |
-| PCB layout | Blocked | 58 clearance errors, ground plane, power routing, USB routing, and SWD access need review |
-| Firmware | Not included | The repository currently provides a firmware design guide, not an implementation |
-| Manufacturing | Not ready | Do not generate or order production files from this revision |
-
-The tracked blockers and design risks live in
-[Docs/06-Known-Issues.md](Docs/06-Known-Issues.md). That file is the release gate, not a
-wish list.
 
 ## Repository Map
 
 ```text
 DayVault/
-|-- EDA/
-|   |-- DayVault.eprj2          EasyEDA Pro project snapshot
-|   |-- DayVault.netlist.json   API-exported schematic netlist
-|   `-- Backups/                EasyEDA automatic backups
-|-- Docs/
-|   |-- 00-开发速查.md           Chinese development quick reference
-|   |-- 01-Hardware-Overview.md Architecture and power domains
-|   |-- 02-MCU-Pinout.md        Complete firmware-facing pin assignment
-|   |-- 03-Component-Pinout.md  Major component connections
-|   |-- 05-Bringup-and-Test.md  Safe first-power validation sequence
-|   |-- 06-Known-Issues.md      Blockers, limitations, and required revisions
-|   |-- 07-BOM.md               Parts and passive values
-|   |-- 08-Net-Map.md           Net-centric endpoint map
-|   `-- 09-USB-DFU-Entry-Design.md  Software-triggered USB DFU auto-entry
-|-- CONTRIBUTING.md
+|-- EDA/                         EasyEDA project and exported netlist
+|-- Docs/                        Hardware and protocol documentation
+|-- firmware/                    PlatformIO STM32 firmware
+|-- tools/dayvault_sync/          Windows desktop sync app
 |-- README.md
 `-- README.zh-CN.md
 ```
 
-## Start Here
+## Useful Entry Points
 
-1. Read the [documentation index](Docs/README.md) and the
-   [known-issues register](Docs/06-Known-Issues.md).
-2. Open [EDA/DayVault.eprj2](EDA/DayVault.eprj2) in EasyEDA Pro to inspect the editable
-   project snapshot.
-3. Use [EDA/DayVault.netlist.json](EDA/DayVault.netlist.json) as a review artifact, not as
-   a replacement for the editable source.
-4. Follow [Docs/05-Bringup-and-Test.md](Docs/05-Bringup-and-Test.md) before powering a
-   prototype.
-5. Base firmware pin assignments on [Docs/02-MCU-Pinout.md](Docs/02-MCU-Pinout.md), then
-   update the documents whenever the schematic changes.
+- [Sync app documentation](tools/dayvault_sync/README.md)
+- [Hardware documentation index](Docs/README.md)
+- [Serial command reference](Docs/Serial-Command-Reference.md)
+- [Hardware overview](Docs/01-Hardware-Overview.md)
+- [MCU pinout](Docs/02-MCU-Pinout.md)
+- [BOM](Docs/07-BOM.md)
+- [Contributing guide](CONTRIBUTING.md)
 
-## Storage Envelope
+## Current Status
 
-These figures are capacity estimates, not implemented codec claims:
+DayVault is an active prototype, not a finished consumer product. The hardware, firmware, and sync tool are all evolving together. Treat this repository as a development record and working prototype source, not as a manufacturing release.
 
-| Recording format | Approximate data per 24 hours | Trade-off |
-| --- | ---: | --- |
-| 16 kHz, 16-bit mono PCM | 2.76 GB | Simplest capture and recovery path |
-| IMA ADPCM mono | 691 MB | Lower storage with modest MCU complexity |
-| Opus at 12-24 kbit/s | 130-259 MB | Best storage efficiency, but substantially more firmware work |
+Known practical notes:
 
-Actual runtime and intelligibility depend on firmware duty cycle, microSD write behavior,
-converter efficiency, microphone mechanics, enclosure design, and the chosen codec. They
-must be measured on the assembled device.
-
-## Bring-Up Roadmap
-
-- [ ] Reconcile the remaining DRC netlist mismatch and re-export the synchronized netlist.
-- [ ] Clear electrical and manufacturing DRC violations.
-- [ ] Add a continuous ground plane and review converter, power, USB, and microSD routing.
-- [ ] Add accessible SWDIO, SWCLK, NRST, 3V3, and GND recovery pads.
-- [ ] Validate all rails and charging behavior with current-limited bench power.
-- [ ] Capture one microphone to RAM, then verify mono files on multiple microSD cards.
-- [ ] Validate Channel 1 mono, then redirected Channel 0 and simultaneous two-channel PDM.
-- [ ] Implement power-fail file closure, battery thresholds, RTC synchronization, and USB export.
-- [ ] Measure 24-hour energy use, thermal behavior, acoustic mechanics, and real speech intelligibility.
+- Recording and sync behavior should be validated with real devices and logs.
+- Firmware, battery thresholds, storage behavior, acoustic quality, and long-duration reliability still need measured bring-up evidence.
+- The desktop sync tool is Windows-focused and depends on Python, PySide6, and pyserial when run from source.
+- No open-source license has been selected yet.
 
 ## Privacy And Safety
 
-DayVault is intended for personal recording. Recording other people may require notice or
-consent depending on local law and context. Protect raw audio and transcripts with strong
-access controls, and define a retention policy before collecting sensitive conversations.
+DayVault is intended for personal recording. Recording other people may require notice or consent depending on local law and context. Protect raw audio and transcripts with strong access controls and decide retention rules before collecting sensitive conversations.
 
-This is an unvalidated wearable electronics design containing a Li-ion battery and charger.
-Use a protected cell, verify polarity, provide strain relief, test charging temperature, and
-do not wear or leave the prototype unattended while its electrical and thermal behavior is
-still unknown.
-
-## Contributing
-
-Hardware review, documentation corrections, firmware experiments, and measured bring-up
-results are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
-Please attach evidence to hardware claims: net names, reference designators, datasheet
-sections, DRC output, scope captures, or reproducible test steps.
+This is an unvalidated wearable electronics prototype with a Li-ion battery and charger. Use protected cells, verify polarity, provide strain relief, test charging temperature, and do not leave early hardware unattended while charging or recording.
 
 ## License
 
-No open-source license has been selected yet. Unless a license is added later, all rights
-remain with the repository owner; the published design files may be inspected but are not
-automatically licensed for reuse, modification, or redistribution.
+No open-source license has been selected yet. Unless a license is added later, all rights remain with the repository owner; published design and source files may be inspected but are not automatically licensed for reuse, modification, or redistribution.
