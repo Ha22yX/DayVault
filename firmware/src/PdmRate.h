@@ -3,6 +3,8 @@
 #include <stdint.h>
 
 #define PDM_DFSDM_SOURCE_HZ 80000000u
+#define PDM_PRODUCTION_CKOUT_DIVIDER 52u
+#define PDM_PRODUCTION_OSR 96u
 #define PDM_CLOCK_HZ(source_hz, divider) \
     ((divider) ? ((source_hz) / (divider)) : 0u)
 #define PDM_PCM_RATE_HZ(source_hz, divider, filter_osr) \
