@@ -4,9 +4,9 @@
 
 **Goal:** Replace the noisy single-microphone recording path with a validated two-channel PDM acquisition path that adaptively preserves both the wearer and the forward conversation partner, then writes one clearer mono WAV stream.
 
-**Architecture:** Two synchronized DFSDM filters feed paired DMA buffers. A fixed-memory DSP pipeline conditions and scores both microphone streams, smoothly fuses the cleaner speech channel, applies conservative post-fusion noise suppression and speech-gated level control, and returns mono PCM to the existing recorder. A bounded stereo diagnostic command and Windows Reminder-driven host tool produce controlled raw captures before constants and channel identity are finalized.
+**Architecture:** Two synchronized DFSDM filters feed paired DMA buffers. A fixed-memory DSP pipeline conditions and scores both microphone streams, smoothly fuses the cleaner speech channel, applies conservative post-fusion noise suppression and speech-gated level control, and returns mono PCM to the existing recorder. Generic constants come from the SPH0655/STM32 constraints and deterministic synthetic tests; this iteration does not collect local calibration recordings.
 
-**Tech Stack:** STM32L452RCT6, STM32duino HAL/DFSDM/DMA, C++11 fixed-memory DSP, PlatformIO Unity native tests, Python 3/pytest/pyserial, FatFs stereo diagnostic WAV, Windows Reminder CLI.
+**Tech Stack:** STM32L452RCT6, STM32duino HAL/DFSDM/DMA, C++11 fixed-memory DSP, PlatformIO Unity native tests, Python 3/pytest for build and memory checks.
 
 ## Global Constraints
 
@@ -14,9 +14,9 @@
 - Never write to `0x1FFF7800`; preserve the software DFU jump to `0x1FFF0000`.
 - Preserve USB VID `0x0483`, existing USB protocols, RTC filenames, circular deletion, and low-battery behavior.
 - Before any firmware flash, confirm ROM DFU is visible with `dfu-util -l`; after flashing, confirm normal USB enumeration and that ROM DFU remains reachable.
-- Production files remain mono 16-bit PCM WAV; stereo is bounded diagnostic output only.
+- Production files remain mono 16-bit PCM WAV; this iteration creates no diagnostic recordings.
 - No heap allocation, blocking serial output, or filesystem access in the per-sample DSP path.
-- Do not finalize channel orientation, gain correction, delay, or noise thresholds from the uncontrolled `DUAL` snapshot.
+- Keep channel identity neutral (`A`/`B`) and do not infer physical orientation from the uncontrolled `DUAL` snapshot.
 - Keep SPH0655 PDM clock inside its documented 1.1-4.8 MHz normal-mode range.
 - Use one exact verified PCM sample rate for DFSDM configuration, WAV headers, filter coefficients, storage calculations, and diagnostics.
 - New continuous DSP must cause zero DMA/ring overruns and must have measured CPU and current-consumption headroom.
@@ -37,7 +37,7 @@
 - Produces: `int pdm_dma_read_dual(int16_t* channel_a, int16_t* channel_b, int max_samples)` returning equal-length, same-index PCM blocks.
 - Produces: `PdmCaptureStats pdm_capture_stats()` with per-channel produced/consumed counts, overrun counts, and measured output count.
 - Produces: pure clock helpers `pdm_clock_hz(sysclk, divider)` and `pdm_pcm_rate_hz(sysclk, divider, osr)` for native tests and WAV configuration.
-- Preserves: `pdm_dma_read()` as a temporary compatibility wrapper until Task 6 moves production recording to paired reads.
+- Preserves: `pdm_dma_read()` as a temporary compatibility wrapper until Task 5 moves production recording to paired reads.
 
 - [ ] **Step 1: Write failing clock and paired-accounting tests**
 
@@ -135,7 +135,7 @@ int pdm_dma_read(int16_t* mono, int max_samples) {
 }
 ```
 
-This wrapper is removed or made private after Task 6.
+This wrapper is removed or made private after Task 5.
 
 - [ ] **Step 5: Run focused tests and firmware build**
 
@@ -157,124 +157,7 @@ git commit -m "feat(audio): expose paired raw PDM capture"
 
 ---
 
-### Task 2: Bounded Stereo Calibration Capture and Reminder Runner
-
-**Files:**
-- Create: `firmware/src/AudioCalibration.h`
-- Create: `firmware/src/AudioCalibration.cpp`
-- Modify: `firmware/src/main.cpp`
-- Create: `tools/audio_calibration.py`
-- Create: `tools/dayvault_sync/tests/test_audio_calibration.py`
-- Modify: `Docs/Serial-Command-Reference.md`
-
-**Interfaces:**
-- Produces firmware command: `CALRAW <SCENE> <SECONDS>` where `SCENE` is 1-12 uppercase letters, digits, `_`, or `-`, and `SECONDS` is 1-15.
-- Produces responses: `CALRAW START file=<name> seconds=<n> rate=<hz>` and `CALRAW DONE file=<name> frames=<n> bytes=<n> overrun=<n>`.
-- Produces host functions: `build_scenes(duration)`, `parse_calraw_start(line)`, `parse_calraw_done(line)`, and `run_calibration(...)`.
-- Consumes: Task 1 `pdm_dma_read_dual()` and existing `DeviceConnection.download_get2()`.
-
-- [ ] **Step 1: Write failing host protocol tests**
-
-Test that the host runner:
-
-```python
-def test_build_scenes_covers_both_directions_and_noise():
-    assert [s.tag for s in build_scenes(10)] == [
-        "QUIET", "WEARER", "FRONT", "ALTERNATE", "CLOTHING"
-    ]
-
-def test_parse_calraw_done_extracts_verified_file():
-    result = parse_calraw_done(
-        "CALRAW DONE file=CAL-QUIET.WAV frames=160260 bytes=641040 overrun=0"
-    )
-    assert result.file == "CAL-QUIET.WAV"
-    assert result.frames == 160260
-    assert result.overrun == 0
-
-def test_scene_tag_rejects_command_injection():
-    with pytest.raises(ValueError):
-        validate_scene_tag("QUIET;DFU")
-```
-
-- [ ] **Step 2: Run the tests and verify RED**
-
-Run: `python -m pytest tools/dayvault_sync/tests/test_audio_calibration.py -q`
-
-Expected: FAIL because `tools.audio_calibration` does not exist.
-
-- [ ] **Step 3: Implement the host runner without showing a real notification in tests**
-
-`run_calibration()` performs this sequence for every scene:
-
-1. call Windows Reminder with a preparation message and `--time 5`;
-2. wait for explicit console confirmation before the first scene only;
-3. show a three-second countdown notification;
-4. send `CALRAW <TAG> <SECONDS>`;
-5. wait for the matching `CALRAW DONE` line;
-6. download the named stereo WAV with `download_get2()`;
-7. write start/end host timestamps and device response fields to `calibration.json`.
-
-Use argument-list subprocess execution, never `shell=True`:
-
-```python
-subprocess.run([
-    str(reminder_cmd), title, body,
-    "--icon", icon, "--time", str(seconds),
-], check=True)
-```
-
-Default reminder path:
-`C:\Users\Administrator\Desktop\Windows Reminder\reminder.cmd`. Add
-`--reminder-path`, `--port`, `--output`, `--duration`, and `--no-notifications` options.
-
-- [ ] **Step 4: Implement bounded stereo WAV capture**
-
-`AudioCalibration.cpp` validates the request before opening a file. It writes a normal
-44-byte PCM WAV header configured for two channels, reads paired blocks of at most 128
-frames, interleaves `[A0, B0, A1, B1, ...]`, and writes through a 1024-byte staging buffer.
-It kicks the watchdog inside the loop, aborts on USB removal, write failure, or overrun, and
-always patches/closes the file. It refuses to run while normal recording is active.
-
-Use a bounded filename such as `0:/CAL-<SCENE>-<HHMMSS>.WAV`; never pass the scene text
-directly to FatFs until validation has succeeded.
-
-- [ ] **Step 5: Run tests and build**
-
-Run:
-
-```powershell
-python -m pytest tools/dayvault_sync/tests/test_audio_calibration.py -q
-pio run -e dayvault
-```
-
-Expected: tests pass and the firmware build reports no section overflow.
-
-- [ ] **Step 6: Flash and collect the pre-change baseline safely**
-
-Run `dfu-util -l` first and save the listing. Enter DFU using the existing `DFU` serial
-command or the hardware BOOT/RESET sequence. Flash only the application address already
-used by this repository; do not issue any option-byte command. After reset, verify
-VID/PID `0483:5740`, `INFO`, and a second ROM-DFU entry.
-
-Run:
-
-```powershell
-python tools/audio_calibration.py --port COM9 --output artifacts/audio-baseline --duration 10
-```
-
-Expected: five stereo files, a manifest, zero capture overruns, and Reminder prompts for
-quiet, wearer, front, alternating, and clothing scenes.
-
-- [ ] **Step 7: Commit**
-
-```powershell
-git add firmware/src/AudioCalibration.h firmware/src/AudioCalibration.cpp firmware/src/main.cpp tools/audio_calibration.py tools/dayvault_sync/tests/test_audio_calibration.py Docs/Serial-Command-Reference.md
-git commit -m "feat(audio): add controlled dual-raw calibration capture"
-```
-
----
-
-### Task 3: Correct PDM Clock, Sample Rate, and Filter Synchronization
+### Task 2: Correct PDM Clock, Sample Rate, and Filter Synchronization
 
 **Files:**
 - Modify: `firmware/src/Config.h`
@@ -344,7 +227,7 @@ git commit -m "fix(audio): synchronize DFSDM at a valid speech clock"
 
 ---
 
-### Task 4: Adaptive Two-Sided Fusion Core
+### Task 3: Adaptive Two-Sided Fusion Core
 
 **Files:**
 - Create: `firmware/src/AudioFusion.h`
@@ -429,7 +312,7 @@ git commit -m "feat(audio): add adaptive two-sided microphone fusion"
 
 ---
 
-### Task 5: Conservative Noise Suppression and Speech Leveling
+### Task 4: Conservative Noise Suppression and Speech Leveling
 
 **Files:**
 - Replace: `firmware/src/NoiseReduction.h`
@@ -443,7 +326,7 @@ git commit -m "feat(audio): add adaptive two-sided microphone fusion"
 **Interfaces:**
 - Produces: `NoiseReduction::process(in, out, 128, speech_present)` with 256-point, 50%-overlap processing and fixed storage.
 - Produces: `SpeechLeveler::process(in, out, 128, speech_present)` and stats containing Q16 gain, limiter count, and hard-clip count.
-- Consumes: Task 4 `speech_present`; returns one mono block without changing sample count.
+- Consumes: Task 3 `speech_present`; returns one mono block without changing sample count.
 
 - [ ] **Step 1: Write failing noise-reduction tests**
 
@@ -513,7 +396,7 @@ git commit -m "feat(audio): add conservative denoising and speech leveling"
 
 ---
 
-### Task 6: Integrate the DSP Pipeline into Continuous Recording
+### Task 5: Integrate the DSP Pipeline into Continuous Recording
 
 **Files:**
 - Modify: `firmware/src/main.cpp`
@@ -523,7 +406,7 @@ git commit -m "feat(audio): add conservative denoising and speech leveling"
 - Modify: `Docs/Serial-Command-Reference.md`
 
 **Interfaces:**
-- Consumes: paired PCM from Task 1, verified rate from Task 3, fusion from Task 4, and enhancement from Task 5.
+- Consumes: paired PCM from Task 1, verified rate from Task 2, fusion from Task 3, and enhancement from Task 4.
 - Produces: mono PCM to the existing `rec_chunk`/FatFs path.
 - Produces commands: `AUDIOSTAT` and `AUDIOBYPASS <0|1>`.
 
@@ -564,8 +447,8 @@ Drain complete buffered blocks during stop, then patch and close WAV exactly as 
 
 `AUDIOSTAT` reports rate, channel RMS/noise, weights, lag/correlation, fault flags, NR
 state, AGC gain, limiter/clips, processing maximum microseconds, and DMA overruns on one
-line. `AUDIOBYPASS 1` uses a safe channel soft-selector without NR/EQ/AGC for controlled
-A/B recordings; it is volatile and resets to enhanced mode after reboot.
+line. `AUDIOBYPASS 1` uses a safe channel soft-selector without NR/EQ/AGC for runtime
+diagnosis; it is volatile and resets to enhanced mode after reboot.
 
 - [ ] **Step 5: Run regression tests and build**
 
@@ -596,96 +479,52 @@ git commit -m "feat(audio): record adaptive dual-mic mono audio"
 
 ---
 
-### Task 7: Controlled A/B Tuning and Release Verification
+### Task 6: Generic Verification and Documentation
 
 **Files:**
-- Create: `tools/analyze_audio_calibration.py`
-- Create: `tools/dayvault_sync/tests/test_audio_analysis.py`
-- Modify: `tools/audio_calibration.py`
-- Create: `Docs/09-Audio-Calibration.md`
+- Create: `Docs/09-Audio-Pipeline.md`
 - Modify: `README.md`
-- Modify: tuning constants only in `firmware/src/AudioFusion.cpp`, `firmware/src/NoiseReduction.cpp`, and `firmware/src/SpeechLeveler.cpp`
+- Modify: tuning constants only when a deterministic fixture demonstrates the need
 
-**Interfaces:**
-- Produces: JSON and Markdown reports comparing raw A/B, bypass mono, and enhanced mono.
-- Consumes: stereo calibration files/manifests and mono A/B files.
+- [ ] **Step 1: Run all targeted tests**
 
-- [ ] **Step 1: Write failing WAV-analysis tests**
+Run the PDM-rate, fusion, noise-reduction, speech-leveler, firmware-memory, CRC32,
+export-protocol, SD-protocol, and WinUSB-descriptor suites listed in Task 5. Do not claim
+the unrelated stale native suites are fixed.
 
-Generate small temporary WAV fixtures and assert analysis calculates channel count, sample
-rate, RMS, peak, clipping, noise-floor percentile, tone-to-neighbor ratio, correlation, and
-best lag. Assert it rejects compressed/non-PCM input and unequal stereo frame data.
+- [ ] **Step 2: Build and inspect resource use**
 
-- [ ] **Step 2: Run and verify RED**
+Run `pio run -e dayvault`, inspect the map/size output, and confirm the binary fits the
+STM32L452RC flash and RAM limits with headroom for DMA, SD, USB, and stack use.
 
-Run: `python -m pytest tools/dayvault_sync/tests/test_audio_analysis.py -q`
+- [ ] **Step 3: Run static safety checks**
 
-Expected: FAIL because the analysis module does not exist.
+Run `git diff --check`. Inspect the final diff to confirm it does not write option bytes,
+does not reference `0x1FFF7800`, preserves the software DFU jump to `0x1FFF0000`, and keeps
+USB VID `0x0483`. This generic pass does not flash the board or create local audio samples.
 
-- [ ] **Step 3: Implement deterministic analysis and channel mapping**
+- [ ] **Step 4: Document the pipeline**
 
-Use Python standard `wave`, `array`, and `math` modules plus NumPy only when already
-available. Infer the forward/inward mapping from controlled WEARER and FRONT scenes only
-when each direction has at least a 3 dB advantage; otherwise report mapping as ambiguous
-and keep neutral firmware labels A/B. Never infer orientation from the uncontrolled snapshot.
+Document the verified PDM clock/rate, neutral A/B channel handling, adaptive fusion,
+conservative NR/leveler defaults, diagnostic commands, bypass behavior, CPU/RAM results,
+and the limits of synthetic-only validation.
 
-- [ ] **Step 4: Safely flash the integrated firmware**
-
-Repeat the DFU pre-check and post-check from Task 2. Do not alter option bytes. Verify
-`INFO`, `PDMRATE`, `AUDIOSTAT`, SD mount, normal recording, USB reconnect, sync download,
-and software `DFU` entry before audio tuning.
-
-- [ ] **Step 5: Record bypass and enhanced controlled scenes**
-
-Run the Reminder-driven sequence once with `AUDIOBYPASS 1` and once with
-`AUDIOBYPASS 0`, using identical device placement and playback level. The quiet scene must
-actually be quiet; the runner announces and timestamps it. Download all files and preserve
-the manifests under `artifacts/audio-validation/<firmware-commit>/`.
-
-- [ ] **Step 6: Tune only from measured comparisons**
-
-Acceptance gates:
-
-- zero hard clips in normal wearer and one-metre forward speech;
-- enhanced quiet RMS at least 6 dB below the old processed recording under the same scene;
-- each direction is no more than 3 dB below its best raw microphone;
-- no repeatable isolated spectral spike introduced by NR;
-- no audible weight clicks, pumping, watery/musical noise, or comb coloration;
-- `AUDIOSTAT` reports zero DMA overruns and processing time below 50% of one block period.
-
-If a gate fails, add a deterministic fixture reproducing it before changing a tuning constant.
-
-- [ ] **Step 7: Run one-hour and power checks**
-
-Record for one hour while forcing periodic SD sync and one USB connect/disconnect cycle.
-Verify WAV duration/rate, file finalization, circular free-space check, no DMA overruns, and
-no watchdog reset. Measure battery current for existing firmware, bypass dual capture, and
-enhanced DSP using the same battery voltage and SD card; record the values in
-`Docs/09-Audio-Calibration.md`.
-
-- [ ] **Step 8: Run final verification**
-
-Run the targeted firmware/Python suites from Task 6, `pio run -e dayvault`, and inspect
-`git diff --check`. Confirm the firmware binary/map fit the STM32L452RC flash/RAM limits.
-
-- [ ] **Step 9: Commit**
+- [ ] **Step 5: Commit**
 
 ```powershell
-git add tools/analyze_audio_calibration.py tools/audio_calibration.py tools/dayvault_sync/tests/test_audio_analysis.py Docs/09-Audio-Calibration.md README.md firmware/src/AudioFusion.cpp firmware/src/NoiseReduction.cpp firmware/src/SpeechLeveler.cpp
-git commit -m "test(audio): validate and tune dual-mic recording"
+git add Docs/09-Audio-Pipeline.md README.md
+git commit -m "docs(audio): document generic dual-mic pipeline"
 ```
 
 ---
 
 ## Plan Self-Review
 
-- Spec coverage: controlled raw capture, synchronized dual DFSDM, exact rate, per-channel
-  conditioning, opposite-direction adaptive fusion, conservative NR, speech AGC, fallback,
-  diagnostics, Reminder prompts, mono storage, power, and audio acceptance tests all map to
-  Tasks 1-7.
+- Spec coverage: synchronized dual DFSDM, exact rate, per-channel conditioning,
+  opposite-direction adaptive fusion, conservative NR, speech AGC, fallback, diagnostics,
+  mono storage, synthetic audio fixtures, and resource checks map to Tasks 1-6.
 - Type consistency: `pdm_dma_read_dual()` feeds 128-sample `AudioFusion`,
   `NoiseReduction`, and `SpeechLeveler` blocks; all return unchanged sample counts.
-- Safety: every flash step repeats DFU visibility checks and explicitly excludes option-byte
-  writes.
+- Safety: this generic pass performs no flash; all code and documentation explicitly exclude
+  option-byte writes.
 - Scope: stale unrelated native tests are documented but not repaired.
-

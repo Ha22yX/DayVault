@@ -1,7 +1,7 @@
 # Dual-Microphone Adaptive Audio Design
 
 **Date:** 2026-08-11  
-**Status:** Approved direction; implementation not started  
+**Status:** In implementation; generic optimization scope
 **Target:** DayVault STM32L452 recorder firmware
 
 ## 1. Objective
@@ -38,8 +38,9 @@ filter placement and storage estimates unreliable.
 The previously observed `DUAL` result was collected while uncontrolled computer audio was
 playing. It is not a silence measurement and must not be used as a microphone-noise,
 sensitivity, or fault conclusion. The existing diagnostic also compares same-index DMA
-samples without first proving channel synchronization. A controlled dual-raw capture is
-required before tuning.
+samples without first proving channel synchronization. This iteration therefore uses
+manufacturer limits, conservative neutral defaults, runtime counters, and deterministic
+synthetic tests rather than local calibration recordings.
 
 ## 3. Constraints
 
@@ -95,40 +96,17 @@ PDM shared data line
 The audio path is separated into five testable stages. Each stage has a bypass mode so
 recordings can be compared without rebuilding unrelated firmware.
 
-## 6. Stage 1: Controlled Dual-Raw Capture
+## 6. Stage 1: Generic Baseline and Synthetic Validation
 
-Before production fusion is enabled, add a bounded diagnostic that records both unprocessed
-DFSDM outputs as a short stereo WAV. This mode is diagnostic only and is never used for
-all-day recording.
+No local calibration recording or reminder workflow is part of this iteration. Start from
+the SPH0655 clock limits and conservative channel-neutral constants. Validate the DSP with
+deterministic generated signals covering clean speech-like tones, uncorrelated noise,
+clipping, dropouts, delay, polarity, clothing-rub-like low-frequency bursts, and channel
+level mismatch.
 
-Capture the following controlled scenes using identical placement:
-
-1. quiet room for at least 10 seconds;
-2. wearer speaking normally for at least 10 seconds;
-3. speaker one metre in front for at least 10 seconds;
-4. wearer and front speaker alternating;
-5. light clothing contact and normal walking movement.
-
-The host-side calibration runner invokes
-`C:\Users\Administrator\Desktop\Windows Reminder\reminder.cmd` to announce each scene.
-It shows a short preparation notice, a three-second countdown, and explicit start/stop
-notifications for quiet and speech segments. The runner records the corresponding host
-timestamps in a test manifest so analysis uses the intended windows instead of guessing
-from waveform energy. DayVault firmware and the production sync application do not depend
-on Windows Reminder; it is test orchestration only. No notification is shown until the user
-explicitly starts a calibration run.
-
-The desktop analysis reports, per channel:
-
-- actual sample rate from DMA sample counts;
-- DC offset, RMS, peak, clipping count, and crest factor;
-- speech-band and out-of-band energy;
-- narrow spectral peaks;
-- gain ratio, polarity, normalized cross-correlation, and best integer lag;
-- channel dropout or repeated-sample evidence.
-
-No adaptive-fusion constants are finalized until this capture proves that both microphone
-streams are valid.
+Runtime diagnostics report paired sample counts, overrun counters, RMS, clipping, fusion
+weights, lag, and correlation without writing diagnostic audio files. Channel labels remain
+neutral `A` and `B`; the firmware does not guess which physical microphone faces forward.
 
 ## 7. Stage 2: Acquisition and Channel Alignment
 
@@ -148,7 +126,7 @@ If an exact 16 kHz rate cannot be produced from the existing clock tree without 
 other peripherals, use the nearest verified rate consistently instead of patching the WAV
 rate from recording duration.
 
-Keep samples in at least 32-bit intermediate form through calibration and filtering. Apply
+Keep samples in at least 32-bit intermediate form through acquisition and filtering. Apply
 saturation only at explicit output boundaries. Detect a dead, stuck, or persistently
 clipped channel and fall back to the healthy channel.
 
@@ -197,7 +175,7 @@ Start with a conservative mode:
 - smooth gains over both time and neighboring frequency bins;
 - keep the spectral gain floor around 0.20-0.30;
 - limit maximum attenuation to avoid musical noise and isolated noise speckles;
-- retain a bypass mode for objective A/B recordings.
+- retain a volatile bypass mode for runtime diagnosis.
 
 The existing 0.06 gain floor is too aggressive for the desired natural conversation sound.
 The implementation may use an optimized CMSIS-DSP FFT or a lower-cost fixed-point path,
@@ -228,10 +206,9 @@ Extend diagnostics without changing normal recording commands:
 - report current fusion weights and channel-fault flags;
 - report estimated noise level, AGC gain, limiter count, and processing time;
 - retain `RAW` and `DUAL` compatibility where practical;
-- provide a short dual-raw diagnostic command with an explicit maximum duration.
+- provide sample-rate and audio-pipeline status commands that do not create recordings.
 
-Diagnostic commands must not block the recorder long enough to overrun DMA. A controlled
-capture writes through the existing ring/SD path or pauses normal recording explicitly.
+Diagnostic commands must not block the recorder long enough to overrun DMA.
 
 ## 13. Acceptance Tests
 
@@ -244,11 +221,11 @@ capture writes through the existing ring/SD path or pauses normal recording expl
 
 ### Audio
 
-- No hard clipping in normal wearer and one-metre conversation tests.
-- Quiet-scene output noise is at least 6 dB below the current processed recording under
-  the same placement and environment.
-- Neither wearer nor forward speaker is suppressed by more than 3 dB relative to the best
-  available microphone for that speaker.
+- Synthetic normal-level speech cases produce no hard clipping.
+- Deterministic noise-only fixtures are attenuated by at least 6 dB after the learning
+  interval while clean speech correlation remains above 0.95.
+- In clean-A/noisy-B and clean-B/noisy-A fixtures, the clean channel receives the larger
+  fusion weight without completely suppressing a second healthy channel.
 - No obvious pumping, clicking, comb-filter coloration, or musical-noise speckles.
 - Fixed tonal interference is removed at its acquisition source where possible; a notch is
   added only when a repeatable raw-capture tone remains.
@@ -266,11 +243,9 @@ capture writes through the existing ring/SD path or pauses normal recording expl
 
 ## 14. Delivery Sequence
 
-1. Add dual-raw diagnostic capture and host analysis.
-2. Prove/synchronize both DFSDM channels and establish the real sample rate.
-3. Add safe per-channel conditioning with all enhancement bypassed.
-4. Implement adaptive two-sided fusion and failed-channel fallback.
-5. Replace aggressive EQ/AGC with the conservative chain.
-6. Add and benchmark post-fusion noise suppression.
-7. Run controlled A/B recordings, tune constants, and document measured results.
-8. Build release firmware only after regression and power tests pass.
+1. Expose paired DFSDM data and exact rate helpers.
+2. Synchronize both DFSDM filters and put the PDM clock inside the microphone limits.
+3. Implement adaptive two-sided fusion and failed-channel fallback with synthetic tests.
+4. Replace aggressive EQ/AGC with conservative noise reduction and level control.
+5. Integrate the mono production path and add lightweight runtime statistics.
+6. Build only after targeted regression, memory, timing, and static safety checks pass.
