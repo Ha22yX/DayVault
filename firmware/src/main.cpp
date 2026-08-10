@@ -57,6 +57,7 @@ void SystemClock_Config(void)
 #define SYSTEM_MEMORY_BASE 0x1FFF0000u
 
 volatile uint32_t g_dbg_step __attribute__((section(".noinit")));
+volatile uint32_t g_dfu_jump __attribute__((section(".noinit")));
 volatile uint32_t g_fault_pc __attribute__((section(".noinit")));
 volatile uint32_t g_fault_lr __attribute__((section(".noinit")));
 volatile uint32_t g_fault_step __attribute__((section(".noinit")));
@@ -347,13 +348,25 @@ static void download_file2(const char* fname)
     Serial.print("DLEND read="); Serial.println(total);
 }
 
-static void dfu_enter(void)
+/* Jump into the system bootloader. Called from the very start of setup() after a
+   DFU-requested reset, so the chip is in a near-pristine state: IWDG not yet
+   armed, USB reset, clocks restored to MSI. */
+static void dfu_jump_from_boot(void)
 {
+    g_dfu_jump = 0;
     HAL_DeInit();
     SysTick->CTRL = 0;
     SysTick->LOAD = 0;
     SysTick->VAL = 0;
     __disable_irq();
+
+    __HAL_RCC_USB_FORCE_RESET();      /* clean USB peripheral for the bootloader */
+    __HAL_RCC_USB_RELEASE_RESET();
+
+    RCC->CFGR &= ~RCC_CFGR_SW;        /* SYSCLK -> MSI first, then PLL off */
+    while ((RCC->CFGR & RCC_CFGR_SWS) != 0u) { }
+    RCC->CR &= ~RCC_CR_PLLON;
+    while (RCC->CR & RCC_CR_PLLRDY) { }
 
     uint32_t msp = *(volatile uint32_t *)SYSTEM_MEMORY_BASE;
     if ((msp & 0xFFF00000u) != 0x20000000u) {
@@ -362,6 +375,17 @@ static void dfu_enter(void)
     }
     __set_MSP(msp);
     ((void (*)(void)) * (volatile uint32_t *)(SYSTEM_MEMORY_BASE + 4u))();
+    while (1) { }
+}
+
+/* Request DFU: set the noinit flag and reset. On reboot, setup() checks the flag
+   (before the IWDG is armed / the app initializes) and jumps into the bootloader
+   from a clean state. */
+static void dfu_enter(void)
+{
+    g_dfu_jump = 0xDFA5u;
+    NVIC_SystemReset();
+    while (1) { }
 }
 
 static WavConfig rec_cfg;
@@ -547,6 +571,7 @@ static void low_battery_enter_stop(void)
 
 void setup()
 {
+    if (g_dfu_jump == 0xDFA5u) dfu_jump_from_boot();   /* DFU requested -> enter bootloader before app init */
     SystemClock_Config();
     pinMode(PIN_USB_DETECT, INPUT);
     pinMode(PIN_BOOT0, INPUT_PULLDOWN);
