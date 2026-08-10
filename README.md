@@ -25,19 +25,6 @@
   <img src=".github/assets/readme-hero.svg" alt="DayVault hardware and sync workflow overview" />
 </p>
 
-## What Changed Recently
-
-DayVault is no longer only a hardware design archive. The latest work adds a Windows desktop sync tool for the microphone module: plug the device into the computer at night, and the app detects it, synchronizes its clock, lists new recordings, and downloads audio files into a per-device folder.
-
-Recent repository updates include:
-
-- A PySide6 `DayVault Sync` desktop app with a device selector, file table, sync folder picker, tray residence, and manual sync button.
-- English as the default UI language, with a saved Chinese language switch.
-- Newest-first recording lists based on timestamped `REC-YYYYMMDD-HHMM...WAV` filenames.
-- Device add/remove and sync start/finish/error logging to `%APPDATA%\DayVault\logs\app.log`.
-- Single-EXE packaging support through `tools/dayvault_sync/build_exe.bat`.
-- Firmware-side recording, timestamp naming, USB serial protocol, DFU entry, battery handling, and circular-recording work tracked in recent commits.
-
 ## Project Gallery
 
 <table>
@@ -69,7 +56,9 @@ Recent repository updates include:
 
 ## Why This Exists
 
-DayVault is built around a simple workflow: carry a small audio recorder during the day, plug it into a computer at night, and let the desktop sync app pull the new `.WAV` files into a local archive. Those files can then be transcribed and indexed off-device.
+I started DayVault because I have been learning PCB design and wanted to build something personal with it: an all-day recording device that can capture every sentence I say and preserve each day as a life archive.
+
+The imagined workflow is simple and a little exciting: carry the microphone module during the day, plug it into the computer at night, let the Windows sync app pull the new `.WAV` files into a local folder, and later use speech-to-text plus AI summaries to automatically generate a written recap of each day.
 
 The repository keeps the full chain visible:
 
