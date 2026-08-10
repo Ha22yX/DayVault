@@ -4,6 +4,7 @@
 
 typedef struct {
     uint32_t gain_q16;
+    uint32_t applied_gain_q16;
     uint32_t limiter_activations;
     uint32_t prevented_clip_events;
     bool bypass;
@@ -12,7 +13,7 @@ typedef struct {
 
 class SpeechLeveler {
 public:
-    static const uint32_t kQuietRiseStepQ16 = 1024u;
+    static const uint32_t kQuietRiseStepQ16 = 4096u;
     static const uint32_t kLoudFallStepQ16 = 8192u;
     static const uint32_t kReleaseStepQ16 = 512u;
 

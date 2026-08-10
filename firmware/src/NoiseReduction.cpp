@@ -117,6 +117,10 @@ void NoiseReduction::reset(uint32_t sample_rate)
 
 void NoiseReduction::set_bypass(bool bypass)
 {
+    if (bypass_ != bypass) {
+        memset(input_history_, 0, sizeof(input_history_));
+        memset(overlap_, 0, sizeof(overlap_));
+    }
     bypass_ = bypass;
     stats_.bypass = bypass;
 }

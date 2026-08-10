@@ -90,6 +90,29 @@ void test_bypass_is_bit_identical(void)
     TEST_ASSERT_TRUE(nr.stats().bypass);
 }
 
+void test_bypass_transition_discards_stale_overlap_before_reenabling(void)
+{
+    NoiseReduction nr;
+    nr.reset(kRate);
+    uint32_t phase = 0u;
+    make_one_khz(input, &phase, 16000);
+    nr.process(input, output, kFrames, false);
+    make_one_khz(input, &phase, 16000);
+    nr.process(input, output, kFrames, false);
+
+    nr.set_bypass(true);
+    uint32_t noise_state = 0x42424242u;
+    make_noise(input, &noise_state, 5000);
+    for (uint32_t i = 0; i < kFrames; i++) reference[i] = input[i];
+    nr.process(input, output, kFrames, false);
+    TEST_ASSERT_EQUAL_INT16_ARRAY(reference, output, kFrames);
+
+    nr.set_bypass(false);
+    for (uint32_t i = 0; i < kFrames; i++) input[i] = 0;
+    nr.process(input, output, kFrames, false);
+    for (uint32_t i = 0; i < kFrames; i++) TEST_ASSERT_TRUE(abs(output[i]) <= 1);
+}
+
 void test_speech_without_noise_model_is_not_muted(void)
 {
     NoiseReduction nr;
@@ -189,6 +212,7 @@ int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_bypass_is_bit_identical);
+    RUN_TEST(test_bypass_transition_discards_stale_overlap_before_reenabling);
     RUN_TEST(test_speech_without_noise_model_is_not_muted);
     RUN_TEST(test_learned_noise_is_reduced_by_at_least_six_db);
     RUN_TEST(test_learned_noise_preserves_clean_one_khz_correlation_after_latency);

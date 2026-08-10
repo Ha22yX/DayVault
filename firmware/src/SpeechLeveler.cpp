@@ -41,6 +41,7 @@ void SpeechLeveler::reset(uint32_t sample_rate)
     bypass_ = false;
     memset(&stats_, 0, sizeof(stats_));
     stats_.gain_q16 = gain_q16_;
+    stats_.applied_gain_q16 = gain_q16_;
 }
 
 void SpeechLeveler::set_bypass(bool bypass)
@@ -57,6 +58,7 @@ void SpeechLeveler::process(const int16_t* in, int16_t* out, uint32_t count,
     stats_.speech_present = speech_present;
     if (bypass_) {
         for (uint32_t i = 0u; i < count; i++) out[i] = in[i];
+        stats_.applied_gain_q16 = kUnityQ16;
         return;
     }
 
@@ -84,8 +86,12 @@ void SpeechLeveler::process(const int16_t* in, int16_t* out, uint32_t count,
         gain_q16_ += release > kReleaseStepQ16 ? kReleaseStepQ16 : release;
     }
 
+    const uint32_t applied_gain = !speech_present && gain_q16_ > kUnityQ16 ?
+                                      kUnityQ16 : gain_q16_;
     for (uint32_t i = 0u; i < count; i++) {
-        const int64_t scaled = ((int64_t)in[i] * gain_q16_ + 32768) >> 16u;
+        const int64_t product = (int64_t)in[i] * applied_gain;
+        const int64_t scaled = product >= 0 ? (product + 32768) >> 16u :
+                                              -(((-product) + 32768) >> 16u);
         if (scaled > kLimiterPeak) {
             out[i] = (int16_t)kLimiterPeak;
             stats_.limiter_activations = saturating_increment(stats_.limiter_activations);
@@ -99,6 +105,7 @@ void SpeechLeveler::process(const int16_t* in, int16_t* out, uint32_t count,
         }
     }
     stats_.gain_q16 = gain_q16_;
+    stats_.applied_gain_q16 = applied_gain;
 }
 
 SpeechLevelerStats SpeechLeveler::stats() const
