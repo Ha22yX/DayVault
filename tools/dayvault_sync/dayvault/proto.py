@@ -5,9 +5,9 @@ from datetime import datetime, timedelta, timezone
 
 _TIMESTAMP_RE = re.compile(
     r"^REC-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(?:_(\d+))?"
-    r"(?:_(?:(\d+)h)?(\d+)m(\d+)s)?\.WAV$"
+    r"(?:_(?:(\d+)h)?(\d+)m(\d+)s)?\.(OPUS|WAV)$", re.IGNORECASE
 )
-_SEQ_RE = re.compile(r"^REC(\d{3})\.WAV$")
+_SEQ_RE = re.compile(r"^REC(\d{3})\.(OPUS|WAV)$", re.IGNORECASE)
 
 
 def parse_list_output(text: str) -> list[tuple[str, int]]:
@@ -41,10 +41,16 @@ def parse_rec_name(name: str) -> dict | None:
             "timestamp": f"{y:04d}-{mo:02d}-{d:02d} {h:02d}:{mi:02d}",
             "collision": int(m.group(6)) if m.group(6) else 0,
             "duration_secs": dur_h * 3600 + dur_m * 60 + dur_s if (m.group(7) or m.group(8) or m.group(9)) else None,
+            "format": m.group(10).lower(),
         }
     m = _SEQ_RE.match(name)
     if m:
-        return {"kind": "seq", "seq": int(m.group(1)), "duration_secs": None}
+        return {
+            "kind": "seq",
+            "seq": int(m.group(1)),
+            "duration_secs": None,
+            "format": m.group(2).lower(),
+        }
     return None
 
 
