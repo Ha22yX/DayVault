@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <new>
 #include <string.h>
+#include <type_traits>
 
 #include "AudioPipeline.h"
 
@@ -302,6 +303,63 @@ void test_only_one_pipeline_can_be_active(void)
     TEST_ASSERT_TRUE(second.finish());
 }
 
+void test_bad_push_failure_releases_storage_for_another_pipeline(void)
+{
+    AudioPipeline failed;
+    AudioPipeline replacement;
+    CapturedFrames captured = {};
+    int16_t sample = 0;
+
+    TEST_ASSERT_TRUE(failed.reset(kSampleRate, capture_frame, &captured));
+    TEST_ASSERT_FALSE(failed.push(0, &sample, 1u));
+    TEST_ASSERT_TRUE(failed.stats().failed);
+    TEST_ASSERT_FALSE(failed.push(&sample, &sample, 1u));
+    TEST_ASSERT_TRUE(replacement.reset(kSampleRate, capture_frame, &captured));
+    TEST_ASSERT_TRUE(replacement.finish());
+}
+
+void test_sink_failure_releases_storage_for_another_pipeline(void)
+{
+    AudioPipeline failed;
+    AudioPipeline replacement;
+    CapturedFrames captured = {};
+    int16_t samples[512] = {};
+    uint32_t sink_calls = 0u;
+
+    TEST_ASSERT_TRUE(failed.reset(kSampleRate, rejecting_sink, &sink_calls));
+    TEST_ASSERT_FALSE(failed.push(samples, samples, 512u));
+    TEST_ASSERT_TRUE(failed.stats().failed);
+    TEST_ASSERT_FALSE(failed.finish());
+    TEST_ASSERT_TRUE(replacement.reset(kSampleRate, capture_frame, &captured));
+    TEST_ASSERT_TRUE(replacement.finish());
+}
+
+void test_finish_failure_releases_storage_for_another_pipeline(void)
+{
+    AudioPipeline failed;
+    AudioPipeline replacement;
+    CapturedFrames captured = {};
+    int16_t samples[129] = {};
+    uint32_t sink_calls = 0u;
+
+    TEST_ASSERT_TRUE(failed.reset(kSampleRate, rejecting_sink, &sink_calls));
+    TEST_ASSERT_TRUE(failed.push(samples, samples, 129u));
+    TEST_ASSERT_FALSE(failed.finish());
+    TEST_ASSERT_TRUE(failed.stats().failed);
+    TEST_ASSERT_EQUAL_UINT32(1u, sink_calls);
+    TEST_ASSERT_FALSE(failed.finish());
+    TEST_ASSERT_TRUE(replacement.reset(kSampleRate, capture_frame, &captured));
+    TEST_ASSERT_TRUE(replacement.finish());
+}
+
+void test_pipeline_cannot_be_copied_or_moved(void)
+{
+    TEST_ASSERT_FALSE((std::is_copy_constructible<AudioPipeline>::value));
+    TEST_ASSERT_FALSE((std::is_copy_assignable<AudioPipeline>::value));
+    TEST_ASSERT_FALSE((std::is_move_constructible<AudioPipeline>::value));
+    TEST_ASSERT_FALSE((std::is_move_assignable<AudioPipeline>::value));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -311,5 +369,9 @@ int main(void)
     RUN_TEST(test_speech_metadata_tracks_delayed_nr_audio_through_partial_flush);
     RUN_TEST(test_calls_before_reset_are_rejected_with_zero_stats);
     RUN_TEST(test_only_one_pipeline_can_be_active);
+    RUN_TEST(test_bad_push_failure_releases_storage_for_another_pipeline);
+    RUN_TEST(test_sink_failure_releases_storage_for_another_pipeline);
+    RUN_TEST(test_finish_failure_releases_storage_for_another_pipeline);
+    RUN_TEST(test_pipeline_cannot_be_copied_or_moved);
     return UNITY_END();
 }

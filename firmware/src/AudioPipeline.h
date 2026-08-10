@@ -22,6 +22,11 @@ public:
     AudioPipeline();
     ~AudioPipeline();
 
+    AudioPipeline(const AudioPipeline&) = delete;
+    AudioPipeline& operator=(const AudioPipeline&) = delete;
+    AudioPipeline(AudioPipeline&&) = delete;
+    AudioPipeline& operator=(AudioPipeline&&) = delete;
+
     bool reset(uint32_t sample_rate, AudioFrameSink sink, void* sink_context);
     bool push(const int16_t* a, const int16_t* b, uint32_t count);
     bool finish();
@@ -34,6 +39,8 @@ private:
     bool process_dsp_block(uint32_t valid_samples);
     bool append_codec_samples(const int16_t* samples, uint32_t valid_samples);
     bool emit_codec_frame(uint16_t valid_samples);
+    bool fail();
+    void release_active();
 
     static AudioFusion fusion_;
     static NoiseReduction noise_reduction_;

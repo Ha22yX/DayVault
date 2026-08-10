@@ -29,13 +29,13 @@ AudioPipeline::AudioPipeline()
 
 AudioPipeline::~AudioPipeline()
 {
-    if (active_instance_ == this) active_instance_ = 0;
+    release_active();
 }
 
 bool AudioPipeline::reset(uint32_t sample_rate, AudioFrameSink sink, void* sink_context)
 {
     if (sink == 0 || (active_instance_ != 0 && active_instance_ != this)) {
-        if (active_instance_ == this) active_instance_ = 0;
+        release_active();
         sink_ = 0;
         sink_context_ = 0;
         input_count_ = 0u;
@@ -73,11 +73,15 @@ bool AudioPipeline::reset(uint32_t sample_rate, AudioFrameSink sink, void* sink_
 
 bool AudioPipeline::push(const int16_t* a, const int16_t* b, uint32_t count)
 {
-    if (!initialized_ || finished_ || stats_.failed) return false;
+    if (!initialized_ || finished_) return false;
+    if (stats_.failed) {
+        release_active();
+        return false;
+    }
+    if (active_instance_ != this) return fail();
     if (count == 0u) return true;
     if (a == 0 || b == 0) {
-        stats_.failed = true;
-        return false;
+        return fail();
     }
 
     for (uint32_t offset = 0u; offset < count;) {
@@ -100,11 +104,16 @@ bool AudioPipeline::push(const int16_t* a, const int16_t* b, uint32_t count)
 
 bool AudioPipeline::finish()
 {
-    if (!initialized_ || stats_.failed) return false;
+    if (!initialized_) return false;
+    if (stats_.failed) {
+        release_active();
+        return false;
+    }
     if (finished_) return true;
+    if (active_instance_ != this) return fail();
     if (stats_.captured_samples == 0u) {
         finished_ = true;
-        active_instance_ = 0;
+        release_active();
         return true;
     }
 
@@ -131,7 +140,7 @@ bool AudioPipeline::finish()
     }
 
     finished_ = true;
-    active_instance_ = 0;
+    release_active();
     return true;
 }
 
@@ -174,10 +183,21 @@ bool AudioPipeline::append_codec_samples(const int16_t* samples, uint32_t valid_
 bool AudioPipeline::emit_codec_frame(uint16_t valid_samples)
 {
     if (!sink_(sink_context_, codec_frame_, valid_samples)) {
-        stats_.failed = true;
-        return false;
+        return fail();
     }
     stats_.emitted_frames++;
     stats_.valid_samples += valid_samples;
     return true;
+}
+
+bool AudioPipeline::fail()
+{
+    stats_.failed = true;
+    release_active();
+    return false;
+}
+
+void AudioPipeline::release_active()
+{
+    if (active_instance_ == this) active_instance_ = 0;
 }
