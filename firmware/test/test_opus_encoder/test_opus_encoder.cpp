@@ -164,6 +164,18 @@ void test_encoder_rejects_small_workspace_without_heap_fallback(void)
     TEST_ASSERT_EQUAL_UINT32(2u, encoder.stats().error_count);
 }
 
+void test_encoder_leaves_non_overlapping_sram2_page_region(void)
+{
+    static const size_t kOggPageBytes = 8192u;
+    static const size_t kEncoderBytes = sizeof(g_workspace) - kOggPageBytes;
+    DayVaultOpusEncoder encoder;
+
+    TEST_ASSERT_TRUE(encoder.begin(g_workspace, kEncoderBytes));
+    TEST_ASSERT_LESS_OR_EQUAL(kEncoderBytes, encoder.workspace_used());
+    TEST_ASSERT_LESS_OR_EQUAL(sizeof(g_workspace),
+                              encoder.workspace_used() + kOggPageBytes);
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -175,5 +187,6 @@ int main(int argc, char** argv)
     RUN_TEST(test_encoder_reset_repeats_the_first_silence_packet);
     RUN_TEST(test_encoder_rejects_bad_parameters_and_counts_errors);
     RUN_TEST(test_encoder_rejects_small_workspace_without_heap_fallback);
+    RUN_TEST(test_encoder_leaves_non_overlapping_sram2_page_region);
     return UNITY_END();
 }

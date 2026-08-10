@@ -36,6 +36,24 @@ static uint32_t parse_num(const char* s)
     return n;
 }
 
+static bool extension_equals(const char* extension, const char* expected)
+{
+    if (extension == NULL || expected == NULL) return false;
+    while (*extension != '\0' && *expected != '\0') {
+        char a = *extension++;
+        char b = *expected++;
+        if (a >= 'a' && a <= 'z') a = (char)(a - 'a' + 'A');
+        if (b >= 'a' && b <= 'z') b = (char)(b - 'a' + 'A');
+        if (a != b) return false;
+    }
+    return *extension == '\0' && *expected == '\0';
+}
+
+static bool is_recording_extension(const char* extension)
+{
+    return extension_equals(extension, REC_EXT_STR) || extension_equals(extension, "WAV");
+}
+
 uint32_t fs_next_sequence(void)
 {
     DIR dir;
@@ -47,7 +65,7 @@ uint32_t fs_next_sequence(void)
         if ((fno.fattrib & AM_DIR) != 0) continue;
         if (strncmp(fno.fname, REC_DIR_STR, strlen(REC_DIR_STR)) != 0) continue;
         char* dot = strrchr(fno.fname, '.');
-        if (dot == NULL || strcmp(dot + 1, REC_EXT_STR) != 0) continue;
+        if (dot == NULL || !extension_equals(dot + 1, REC_EXT_STR)) continue;
         uint32_t n = parse_num(fno.fname + strlen(REC_DIR_STR));
         if (n > max_num) max_num = n;
     }
@@ -125,7 +143,7 @@ static int fs_collect_rec(rec_file_t* arr, int cap, const char* skip)
         if ((fno.fattrib & AM_DIR) != 0) continue;
         if (strncmp(fno.fname, REC_DIR_STR, strlen(REC_DIR_STR)) != 0) continue;
         char* dot = strrchr(fno.fname, '.');
-        if (dot == NULL || strcmp(dot + 1, REC_EXT_STR) != 0) continue;
+        if (dot == NULL || !is_recording_extension(dot + 1)) continue;
         if (skip != NULL && strcmp(fno.fname, skip) == 0) continue;   /* never touch active recording */
         strncpy(arr[n].name, fno.fname, sizeof(arr[n].name) - 1);
         arr[n].name[sizeof(arr[n].name) - 1] = 0;

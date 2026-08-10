@@ -14,6 +14,9 @@ typedef struct {
     uint32_t emitted_frames;
     uint32_t dsp_blocks;
     uint32_t suppressed_latency_samples;
+    AudioFusionStats fusion;
+    NoiseReductionStats noise_reduction;
+    SpeechLevelerStats leveler;
     bool failed;
 } AudioPipelineStats;
 

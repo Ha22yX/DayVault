@@ -144,14 +144,3 @@ bool DayVaultOpusEncoder::fail_begin()
     ++stats_.error_count;
     return false;
 }
-
-extern "C" int dayvault_opus_encoder_link_probe(
-    DayVaultOpusEncoder* encoder, void* workspace, size_t bytes,
-    const int16_t* pcm, uint8_t* packet)
-{
-    if (encoder == nullptr || pcm == nullptr || packet == nullptr) return OPUS_BAD_ARG;
-    if (!encoder->begin(workspace, bytes)) return OPUS_ALLOC_FAIL;
-    const int length = encoder->encode(pcm, packet);
-    encoder->end();
-    return length;
-}

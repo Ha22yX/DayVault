@@ -7,6 +7,10 @@ REPO = Path(__file__).resolve().parents[3]
 LINKER = REPO / "firmware" / "boards" / "stm32l452rc.ld"
 BOARD = REPO / "firmware" / "boards" / "dayvault_l452rc.json"
 MAIN = REPO / "firmware" / "src" / "main.cpp"
+CONFIG = REPO / "firmware" / "src" / "Config.h"
+COMPRESSED_RECORDER = REPO / "firmware" / "src" / "CompressedRecorder.cpp"
+COMPRESSED_RECORDER_HEADER = REPO / "firmware" / "src" / "CompressedRecorder.h"
+FS = REPO / "firmware" / "src" / "Fs.cpp"
 PLATFORMIO = REPO / "firmware" / "platformio.ini"
 WINUSB_DEVICE = REPO / "firmware" / "src" / "WinUsbDevice.cpp"
 
@@ -37,6 +41,64 @@ def test_platformio_board_reports_total_sram():
 def test_main_has_no_16k_transfer_buffer_on_stack():
     text = MAIN.read_text(encoding="utf-8")
     assert not re.search(r"uint8_t\s+\w+\s*\[\s*16384\s*\]", text)
+
+
+def test_production_recorder_uses_direct_paired_ogg_opus_path():
+    recorder_text = (
+        COMPRESSED_RECORDER_HEADER.read_text(encoding="utf-8")
+        + "\n"
+        + COMPRESSED_RECORDER.read_text(encoding="utf-8")
+        if COMPRESSED_RECORDER.exists()
+        else ""
+    )
+    config_text = CONFIG.read_text(encoding="utf-8")
+    main_text = MAIN.read_text(encoding="utf-8")
+    all_firmware_text = "\n".join(
+        path.read_text(encoding="utf-8", errors="ignore")
+        for path in (REPO / "firmware" / "src").rglob("*")
+        if path.is_file()
+    )
+
+    assert "pdm_dma_read_dual" in recorder_text
+    assert "AudioPipeline" in recorder_text
+    assert "DayVaultOpusEncoder" in recorder_text
+    assert "OggOpusWriter" in recorder_text
+    assert 'REC_EXT_STR "OPUS"' in config_text
+    assert "wav_build_header" not in recorder_text
+    assert "OPUSSTAT" in main_text
+    assert "0x1FFF0000u" in main_text
+    assert "0x1FFF7800" not in all_firmware_text
+
+
+def test_production_codec_is_linked_without_temporary_probe():
+    platformio_text = PLATFORMIO.read_text(encoding="utf-8")
+    encoder_text = (REPO / "firmware" / "src" / "DayVaultOpusEncoder.cpp").read_text(
+        encoding="utf-8"
+    )
+
+    assert "dayvault_opus_encoder_link_probe" not in platformio_text
+    assert "dayvault_opus_encoder_link_probe" not in encoder_text
+
+
+def test_recording_deletion_keeps_legacy_wav_compatibility():
+    text = FS.read_text(encoding="utf-8")
+
+    assert "is_recording_extension" in text
+    assert "REC_EXT_STR" in text
+    assert '"WAV"' in text
+
+
+def test_sram2_transfer_commands_exclude_production_recording():
+    text = MAIN.read_text(encoding="utf-8")
+    command_handler = text[text.index('strcmp(line, "BULKSPEED")'):]
+    command_handler = command_handler[: command_handler.index('strncmp(line, "BAT10"')]
+
+    assert "transfer_workspace_busy" in text
+    for command in ('"BULKSPEED"', '"BULK2 "', '"GET2 "', '"DL2 "', '"SDSPEED"', '"SPEED"'):
+        start = command_handler.index(command)
+        block = command_handler[start : start + 900]
+        assert "rec_stop()" in block
+        assert "transfer_workspace_busy = true" in block
 
 
 def test_usb_cdc_tx_queue_is_large_but_sram_bounded():

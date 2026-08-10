@@ -67,6 +67,9 @@ bool AudioPipeline::reset(uint32_t sample_rate, AudioFrameSink sink, void* sink_
     fusion_.reset(sample_rate);
     noise_reduction_.reset(sample_rate);
     speech_leveler_.reset(sample_rate);
+    stats_.fusion = fusion_.stats();
+    stats_.noise_reduction = noise_reduction_.stats();
+    stats_.leveler = speech_leveler_.stats();
 
     return true;
 }
@@ -155,6 +158,9 @@ bool AudioPipeline::process_dsp_block(uint32_t valid_samples)
     const AudioFusionStats fusion_stats = fusion_.stats();
     noise_reduction_.process(fused_, reduced_, kDspBlockSamples, fusion_stats.speech_present);
     speech_leveler_.process(reduced_, leveled_, kDspBlockSamples, delayed_speech_present_);
+    stats_.fusion = fusion_stats;
+    stats_.noise_reduction = noise_reduction_.stats();
+    stats_.leveler = speech_leveler_.stats();
     stats_.dsp_blocks++;
 
     if (!latency_suppressed_) {

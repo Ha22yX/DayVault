@@ -218,7 +218,7 @@ void test_audio_page_uses_packet_lacing_and_eos_granule(void)
     TEST_ASSERT_TRUE(all_page_crc_values_are_valid(captured.bytes, captured.length));
 }
 
-void test_fiftieth_packet_stays_pending_until_next_packet_or_finish(void)
+void test_fiftieth_packet_immediately_emits_one_second_page(void)
 {
     uint8_t packet[160] = {};
     packet[0] = 0xF8;
@@ -229,19 +229,18 @@ void test_fiftieth_packet_stays_pending_until_next_packet_or_finish(void)
 
     begin_writer(&writer, &captured, page_buffer);
     for (uint8_t i = 0u; i < 50u; ++i) TEST_ASSERT_TRUE(writer.add_packet(packet, sizeof(packet), 160u));
-    TEST_ASSERT_EQUAL_UINT32(2u, collect_pages(captured, pages, 5u));
-
-    TEST_ASSERT_TRUE(writer.add_packet(packet, sizeof(packet), 160u));
     TEST_ASSERT_EQUAL_UINT32(3u, collect_pages(captured, pages, 5u));
     TEST_ASSERT_EQUAL_UINT8(0x00u, pages[2].bytes[5u]);
     TEST_ASSERT_EQUAL_UINT32(8077u, pages[2].length);
     TEST_ASSERT_EQUAL_UINT8(50u, pages[2].bytes[26u]);
+    TEST_ASSERT_EQUAL_UINT64(24312u, read_le64(pages[2].bytes + 6u));
     for (uint8_t i = 0u; i < 50u; ++i) TEST_ASSERT_EQUAL_UINT8(160u, pages[2].bytes[27u + i]);
 
     TEST_ASSERT_TRUE(writer.finish());
     TEST_ASSERT_EQUAL_UINT32(4u, collect_pages(captured, pages, 5u));
     TEST_ASSERT_EQUAL_UINT8(0x04u, pages[3].bytes[5u]);
-    TEST_ASSERT_EQUAL_UINT64(24792u, read_le64(pages[3].bytes + 6u));
+    TEST_ASSERT_EQUAL_UINT8(0u, pages[3].bytes[26u]);
+    TEST_ASSERT_EQUAL_UINT64(24312u, read_le64(pages[3].bytes + 6u));
 }
 
 void test_rejects_packet_larger_than_fixed_160_byte_limit(void)
@@ -324,7 +323,7 @@ void test_rollover_sink_failure_latches_writer_closed(void)
     OggOpusWriter writer;
 
     TEST_ASSERT_TRUE(writer.begin(failing_sink(&sink), page_buffer, sizeof(page_buffer), 1u, 312u));
-    for (uint8_t i = 0u; i < 50u; ++i) TEST_ASSERT_TRUE(writer.add_packet(packet, sizeof(packet), 160u));
+    for (uint8_t i = 0u; i < 49u; ++i) TEST_ASSERT_TRUE(writer.add_packet(packet, sizeof(packet), 160u));
     TEST_ASSERT_FALSE(writer.add_packet(packet, sizeof(packet), 160u));
     TEST_ASSERT_EQUAL_UINT32(3u, sink.calls);
     TEST_ASSERT_FALSE(writer.add_packet(packet, sizeof(packet), 160u));
@@ -374,7 +373,7 @@ int main(int argc, char** argv)
     RUN_TEST(test_begin_emits_golden_opus_head_page_with_valid_crc);
     RUN_TEST(test_begin_emits_opus_tags_page);
     RUN_TEST(test_audio_page_uses_packet_lacing_and_eos_granule);
-    RUN_TEST(test_fiftieth_packet_stays_pending_until_next_packet_or_finish);
+    RUN_TEST(test_fiftieth_packet_immediately_emits_one_second_page);
     RUN_TEST(test_rejects_packet_larger_than_fixed_160_byte_limit);
     RUN_TEST(test_rejects_zero_length_packet);
     RUN_TEST(test_rejects_nonempty_null_packet);

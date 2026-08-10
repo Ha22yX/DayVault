@@ -360,6 +360,22 @@ void test_pipeline_cannot_be_copied_or_moved(void)
     TEST_ASSERT_FALSE((std::is_move_assignable<AudioPipeline>::value));
 }
 
+void test_stats_expose_latest_dsp_diagnostics(void)
+{
+    AudioPipeline pipeline;
+    CapturedFrames captured = {};
+    int16_t samples[256] = {};
+
+    TEST_ASSERT_TRUE(pipeline.reset(kSampleRate, capture_frame, &captured));
+    TEST_ASSERT_TRUE(pipeline.push(samples, samples, 256u));
+
+    const AudioPipelineStats stats = pipeline.stats();
+    TEST_ASSERT_EQUAL_INT32(32768, stats.fusion.weight_a_q15 + stats.fusion.weight_b_q15);
+    TEST_ASSERT_EQUAL_UINT32(128u, stats.noise_reduction.latency_samples);
+    TEST_ASSERT_GREATER_THAN(0u, stats.leveler.gain_q16);
+    TEST_ASSERT_TRUE(pipeline.finish());
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -373,5 +389,6 @@ int main(void)
     RUN_TEST(test_sink_failure_releases_storage_for_another_pipeline);
     RUN_TEST(test_finish_failure_releases_storage_for_another_pipeline);
     RUN_TEST(test_pipeline_cannot_be_copied_or_moved);
+    RUN_TEST(test_stats_expose_latest_dsp_diagnostics);
     return UNITY_END();
 }

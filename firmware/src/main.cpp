@@ -14,6 +14,7 @@
 #include "Crc32.h"
 #include "ExportProtocol.h"
 #include "WinUsbDevice.h"
+#include "CompressedRecorder.h"
 #include <string.h>
 
 extern "C" void SystemClock_Config(void);
@@ -121,6 +122,7 @@ static void dbg_report_last_step(void)
 
 static uint8_t audio_buf[PDM_RING_BYTES];
 static RingBuf audio_rb;
+static bool transfer_workspace_busy = false;
 
 static void print_benchmark(const char* layer, uint32_t byte_count,
                             uint32_t duration_ms, uint32_t crc32)
@@ -151,7 +153,7 @@ static void check_wav_file(void)
             if ((fno.fattrib & AM_DIR) != 0) continue;
             if (strncmp(fno.fname, REC_DIR_STR, strlen(REC_DIR_STR)) != 0) continue;
             char* dot = strrchr(fno.fname, '.');
-            if (dot == NULL || strcmp(dot + 1, REC_EXT_STR) != 0) continue;
+            if (dot == NULL || strcmp(dot + 1, "WAV") != 0) continue;
             if (best[0] == 0 || rec_name_cmp(fno.fname, best) > 0) {
                 strncpy(best, fno.fname, sizeof(best) - 1);
                 best[sizeof(best) - 1] = 0;
@@ -718,37 +720,22 @@ static void dfu_enter(void)
     while (1) { }
 }
 
-static WavConfig rec_cfg;
-static FIL rec_file;
+static CompressedRecorder recorder;
 static bool rec_active = false;
-static uint32_t rec_data_bytes = 0;
 #define REC_SYNC_INTERVAL_MS 1000u
 #define REC_CIRC_INTERVAL_MS 30000u
 static uint32_t rec_circ_last_ms = 0;
 static uint32_t rec_seq = 1;
 static uint32_t rec_last_sync_ms = 0;
-static uint32_t rec_discard = 0;
-static uint8_t rec_chunk[64];
-static size_t rec_chunk_len = 0;
 static int rec_err = 0;
-static char rec_name[40];          /* current file path (set in rec_start) */
-static uint8_t rec_name_kind = 0;  /* 0 = seq fallback, 1 = timestamp */
+static char rec_name[64];
 #define CIRC_FREE_BYTES (64u * 1024u * 1024u)   /* delete oldest below this free space */
 
-static void rec_flush_chunk(void)
+static void rec_copy_identity(void)
 {
-    UINT wr = 0;
-    if (rec_chunk_len > 0) {
-        if (f_write(&rec_file, rec_chunk, (UINT)rec_chunk_len, &wr) == FR_OK) rec_data_bytes += wr;
-        rec_chunk_len = 0;
-    }
-}
-
-static void rec_duration_str(char* out, size_t len, uint32_t secs)
-{
-    uint32_t h = secs / 3600u, m = (secs / 60u) % 60u, s = secs % 60u;
-    if (h > 0) snprintf(out, len, "_%luh%02lum%02lus", (unsigned long)h, (unsigned)m, (unsigned)s);
-    else       snprintf(out, len, "_%lum%02lus",       (unsigned)m,    (unsigned)s);
+    strncpy(rec_name, recorder.name(), sizeof(rec_name) - 1u);
+    rec_name[sizeof(rec_name) - 1u] = '\0';
+    rec_seq = recorder.sequence();
 }
 
 static int rec_name_cmp(const char* a, const char* b)
@@ -761,110 +748,76 @@ static int rec_name_cmp(const char* a, const char* b)
 
 static void rec_start(void)
 {
-    UINT wr = 0;
-    uint8_t hdr[44];
-    if (rec_active) return;
-    rec_err = 0;
-    if (!fs_mount()) { rec_err = 1; return; }
-
-    rec_name_kind = 0;
-    if (dt_time_is_set()) {
-        char stem[16];
-        dt_format_stem(stem, sizeof(stem));
-        for (uint8_t n = 0; n < 10; n++) {
-            if (n == 0) snprintf(rec_name, sizeof(rec_name), "0:/REC-%s.WAV", stem);
-            else        snprintf(rec_name, sizeof(rec_name), "0:/REC-%s_%u.WAV", stem, (unsigned)n);
-            if (f_open(&rec_file, rec_name, FA_CREATE_NEW | FA_WRITE) == FR_OK) { rec_name_kind = 1; break; }
-        }
+    if (rec_active || transfer_workspace_busy) {
+        rec_err = COMPRESSED_RECORDER_ERR_BUSY;
+        return;
     }
-    if (!rec_name_kind) {
-        rec_seq = fs_next_sequence();
-        snprintf(rec_name, sizeof(rec_name), "0:/%s%03u.%s", REC_DIR_STR, (unsigned)rec_seq, REC_EXT_STR);
-        if (f_open(&rec_file, rec_name, FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) { rec_err = 2; fs_unmount(); return; }
-    }
-
-    wav_build_header(hdr, &rec_cfg, 0);
-    if (f_write(&rec_file, hdr, 44, &wr) != FR_OK || wr != 44) { rec_err = 3; f_close(&rec_file); fs_unmount(); return; }
-    f_sync(&rec_file);               /* durable header before any data (power-loss safety) */
-    rec_data_bytes = 0;
-    rec_chunk_len = 0;
-    rec_discard = 32;
     ringbuf_init(&audio_rb, audio_buf, sizeof(audio_buf));
-    pdm_init(&audio_rb);
-    pdm_start();
+    const CompressedRecorderResult result = recorder.start(&audio_rb, CIRC_FREE_BYTES);
+    rec_err = (int)result;
+    rec_copy_identity();
+    rec_active = recorder.active();
+    if (!rec_active) return;
     rec_last_sync_ms = millis();
-    rec_active = true;
-    fs_make_space(CIRC_FREE_BYTES, rec_name + 3);   /* free room before a long recording */
+    rec_circ_last_ms = rec_last_sync_ms;
 }
-
-static int rec_read_sample(int16_t* s);
 
 static void rec_stop(void)
 {
-    int16_t s;
-    UINT wr = 0;
-    uint8_t hdr[44];
     if (!rec_active) return;
-    pdm_stop();
-    while (rec_read_sample(&s)) {
-        rec_chunk[rec_chunk_len++] = (uint8_t)s;
-        rec_chunk[rec_chunk_len++] = (uint8_t)(s >> 8);
-        if (rec_chunk_len == sizeof(rec_chunk)) rec_flush_chunk();
-    }
-    rec_flush_chunk();
-    wav_build_header(hdr, &rec_cfg, rec_data_bytes);
-    if (f_lseek(&rec_file, 0) == FR_OK) f_write(&rec_file, hdr, 44, &wr);
-    f_sync(&rec_file);
-    if (rec_name_kind == 1) {
-        uint32_t secs = rec_cfg.byte_rate ? (rec_data_bytes / (uint32_t)rec_cfg.byte_rate) : 0;
-        char dur[24], newname[64];
-        rec_duration_str(dur, sizeof(dur), secs);
-        char* dot = strrchr(rec_name, '.');
-        if (dot != NULL) {
-            snprintf(newname, sizeof(newname), "%.*s%s.WAV", (int)(dot - rec_name), rec_name, dur);
-            if (f_rename(rec_name, newname) == FR_OK) strncpy(rec_name, newname, sizeof(rec_name) - 1);
-        }
-    }
-    f_close(&rec_file);
+    const CompressedRecorderResult result = recorder.stop();
+    rec_err = (int)result;
+    rec_copy_identity();
     rec_active = false;
-    Serial.print("AUTO stop err="); Serial.print(rec_err);
-    Serial.print(" bytes="); Serial.print(rec_data_bytes);
-    Serial.print(" rate="); Serial.println(rec_cfg.sample_rate);
-}
-
-static int rec_read_sample(int16_t* s)
-{
-    while (rec_discard > 0) {
-        int16_t tmp;
-        if (pdm_dma_read(&tmp, 1) != 1) return 0;
-        rec_discard--;
-    }
-    return pdm_dma_read(s, 1);
+    const CompressedRecorderStats stats = recorder.stats();
+    Serial.print("AUTO stop err="); Serial.print(CompressedRecorder::result_name(result));
+    Serial.print(" bytes="); Serial.print((uint32_t)stats.ogg.bytes_written);
+    Serial.print(" rate="); Serial.println(stats.sample_rate);
 }
 
 static void rec_poll_samples(void)
 {
-    int16_t tmp[128];
-    int n = pdm_dma_read(tmp, 128);
-    for (int i = 0; i < n; i++) {
-        int16_t s = tmp[i];
-        rec_chunk[rec_chunk_len++] = (uint8_t)s;
-        rec_chunk[rec_chunk_len++] = (uint8_t)(s >> 8);
-        if (rec_chunk_len == sizeof(rec_chunk)) rec_flush_chunk();
+    const CompressedRecorderResult result = recorder.poll();
+    if (result != COMPRESSED_RECORDER_OK) {
+        rec_err = (int)result;
+        rec_stop();
     }
 }
 
 static void rec_checkpoint(void)
 {
     if (!rec_active) return;
-    uint8_t hdr[44];
-    UINT wr = 0;
-    wav_build_header(hdr, &rec_cfg, rec_data_bytes);
-    if (f_lseek(&rec_file, 0) == FR_OK && f_write(&rec_file, hdr, 44, &wr) == FR_OK) {
-        f_sync(&rec_file);
+    const CompressedRecorderResult result = recorder.checkpoint();
+    if (result == COMPRESSED_RECORDER_OK) {
+        rec_last_sync_ms = millis();
+    } else if (result != COMPRESSED_RECORDER_CHECKPOINT_NOT_READY) {
+        rec_err = (int)result;
+        rec_stop();
     }
-    f_lseek(&rec_file, 44u + rec_data_bytes);
-    rec_last_sync_ms = millis();
+}
+
+static void opusstat_print(void)
+{
+    const CompressedRecorderStats stats = recorder.stats();
+    Serial.print("OPUSSTAT bitrate="); Serial.print(stats.bitrate);
+    Serial.print(" rate="); Serial.print(stats.sample_rate);
+    Serial.print(" frames="); Serial.print((uint32_t)stats.encoder.frame_count);
+    Serial.print(" pages="); Serial.print((uint32_t)stats.ogg.page_count);
+    Serial.print(" valid="); Serial.print((uint32_t)stats.ogg.valid_input_samples);
+    Serial.print(" bytes="); Serial.print((uint32_t)stats.ogg.bytes_written);
+    Serial.print(" enc_err="); Serial.print(stats.encoder.error_count);
+    Serial.print(" max_us="); Serial.print(stats.max_encode_us);
+    Serial.print(" workspace="); Serial.print((uint32_t)stats.workspace_used);
+    Serial.print(" dma_overruns="); Serial.print(stats.pdm.paired_overruns);
+    Serial.print(" fusion_wa="); Serial.print(stats.pipeline.fusion.weight_a_q15);
+    Serial.print(" fusion_wb="); Serial.print(stats.pipeline.fusion.weight_b_q15);
+    Serial.print(" fusion_faults="); Serial.print(stats.pipeline.fusion.fault_flags);
+    Serial.print(" nr_ready="); Serial.print(stats.pipeline.noise_reduction.noise_model_ready ? 1 : 0);
+    Serial.print(" nr_gain="); Serial.print(stats.pipeline.noise_reduction.average_gain_q15);
+    Serial.print(" level_gain="); Serial.print(stats.pipeline.leveler.applied_gain_q16);
+    Serial.print(" limiter="); Serial.print(stats.pipeline.leveler.limiter_activations);
+    Serial.print(" active="); Serial.print(recorder.active() ? 1 : 0);
+    Serial.print(" err="); Serial.println(CompressedRecorder::result_name(stats.last_result));
 }
 
 static void exti_usb_wake_enable(void)
@@ -879,7 +832,7 @@ static void exti_usb_wake_enable(void)
 
 static void low_battery_enter_stop(void)
 {
-    if (rec_active) rec_stop();   /* clean finalize: rebuild header + sync + close */
+    if (rec_active) rec_stop();   /* clean finalize: drain DSP, write EOS, sync, close */
     dt_set_wake(4);                       /* wake every 4 s to refresh IWDG + re-check */
     dbg_iwdg_kick();                      /* refresh right before sleeping */
     HAL_SuspendTick();
@@ -913,12 +866,6 @@ void setup()
     bat_init();
     exti_usb_wake_enable();
 
-    rec_cfg.format = 1;
-    rec_cfg.sample_rate = pdm_output_rate_hz();
-    rec_cfg.channels = AUDIO_CHANNELS;
-    rec_cfg.bits = AUDIO_BITS;
-    rec_cfg.block_align = (uint16_t)(AUDIO_CHANNELS * (AUDIO_BITS / 8u));
-    rec_cfg.byte_rate = rec_cfg.sample_rate * rec_cfg.block_align;
 }
 
 #define BAT_SLEEP_MV   3000u
@@ -1074,7 +1021,9 @@ loop_restart:
                         download_file(line + 9);
                     } else if (strcmp(line, "BULKSPEED") == 0) {
                         if (rec_active) rec_stop();
+                        transfer_workspace_busy = true;
                         benchmark_winusb();
+                        transfer_workspace_busy = false;
                     } else if (strncmp(line, "BULK2 ", 6) == 0) {
                         char request_line[128];
                         snprintf(request_line, sizeof(request_line),
@@ -1082,20 +1031,37 @@ loop_restart:
                         ExportRequest request;
                         if (export_parse_get2(request_line, &request)) {
                             if (rec_active) rec_stop();
+                            transfer_workspace_busy = true;
                             download_file_bulk2(&request);
+                            transfer_workspace_busy = false;
                         } else {
                             Serial.println("BULK2FAIL reason=request");
                         }
                     } else if (strncmp(line, "GET2 ", 5) == 0) {
                         ExportRequest request;
-                        if (export_parse_get2(line, &request)) download_file_get2(&request);
-                        else Serial.println("GET2FAIL reason=request");
+                        if (export_parse_get2(line, &request)) {
+                            if (rec_active) rec_stop();
+                            transfer_workspace_busy = true;
+                            download_file_get2(&request);
+                            transfer_workspace_busy = false;
+                        } else Serial.println("GET2FAIL reason=request");
                     } else if (strncmp(line, "DL2 ", 4) == 0) {
+                        if (rec_active) rec_stop();
+                        transfer_workspace_busy = true;
                         download_file2(line + 4);
+                        transfer_workspace_busy = false;
+                    } else if (strcmp(line, "OPUSSTAT") == 0) {
+                        opusstat_print();
                     } else if (strncmp(line, "REC", 3) == 0 && line[3] != ' ') {
                         rec_start();
-                        Serial.print("REC started seq="); Serial.print(rec_seq);
-                        Serial.print(" name="); Serial.println(rec_name);
+                        if (rec_active) {
+                            Serial.print("REC started seq="); Serial.print(rec_seq);
+                            Serial.print(" name="); Serial.println(rec_name);
+                        } else {
+                            Serial.print("REC start FAIL err=");
+                            Serial.println(CompressedRecorder::result_name(
+                                (CompressedRecorderResult)rec_err));
+                        }
                     } else if (strncmp(line, "STOP", 4) == 0) {
                         rec_stop();
                     } else if (strncmp(line, "CHECK", 5) == 0) {
@@ -1116,6 +1082,8 @@ loop_restart:
                     } else if (strncmp(line, "CAPT", 4) == 0) {
                         record_test(5);
                     } else if (strncmp(line, "SDSPEED", 7) == 0) {
+                        if (rec_active) rec_stop();
+                        transfer_workspace_busy = true;
                         DIR dir; FILINFO fno; char fname[40]; fname[0] = 0;
                         uint64_t bestsz = 0;
                         if (f_opendir(&dir, "0:/") == FR_OK) {
@@ -1129,7 +1097,11 @@ loop_restart:
                         uint8_t* const big = transfer_buffer(0);
                         char p2[48];
                         snprintf(p2, sizeof(p2), "0:/%s", fname);
-                        if (f_open(&f2, p2, FA_READ) != FR_OK) { Serial.println("SDSPEED open FAIL"); return; }
+                        if (f_open(&f2, p2, FA_READ) != FR_OK) {
+                            transfer_workspace_busy = false;
+                            Serial.println("SDSPEED open FAIL");
+                            return;
+                        }
                         uint32_t rd2 = 0, n2 = 0;
                         uint32_t crc2 = 0;
                         sd_reset_stats();
@@ -1154,7 +1126,10 @@ loop_restart:
                         Serial.print(" fallback="); Serial.print(sd_stats.multi_read_fallbacks);
                         Serial.print(" sectors="); Serial.print(sd_stats.sectors_read);
                         Serial.print(" errors="); Serial.println(sd_stats.read_errors);
+                        transfer_workspace_busy = false;
                     } else if (strncmp(line, "SPEED", 5) == 0) {
+                        if (rec_active) rec_stop();
+                        transfer_workspace_busy = true;
                         uint8_t* const sp_buf = transfer_buffer(1);
                         const uint32_t sp_block = (uint32_t)transfer_buffer_size();
                         for (uint32_t i = 0; i < sp_block; i++) sp_buf[i] = (uint8_t)i;
@@ -1175,6 +1150,7 @@ loop_restart:
                         uint32_t sp_elapsed = millis() - sp_started;
                         Serial.println("SPEEDEND");
                         print_benchmark("usb", sp_sent, sp_elapsed, sp_crc);
+                        transfer_workspace_busy = false;
                     } else if (strncmp(line, "BAT10", 5) == 0) {
                         uint32_t sum = 0, cnt = 0, mn = 0xFFFFFFFF, mx = 0;
                         uint32_t t0 = millis();
