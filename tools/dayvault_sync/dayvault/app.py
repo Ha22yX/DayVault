@@ -178,13 +178,16 @@ class DeviceMonitor(QObject):
         for serial in list(self._known):
             if serial not in current:
                 del self._known[serial]
+                log.info("device removed: serial=%s", serial)
                 self.device_removed.emit(serial)
         for serial, port in current.items():
             if serial not in self._known:
                 self._known[serial] = port
+                log.info("device added: port=%s serial=%s", port, serial)
                 self.device_added.emit(port, serial)
                 self.start_sync(port, serial)
             elif self._known[serial] != port:
+                log.info("device port changed: serial=%s old=%s new=%s", serial, self._known[serial], port)
                 self._known[serial] = port
                 if serial not in self._threads:
                     self.start_sync(port, serial)
@@ -318,6 +321,7 @@ class MainWindow(QMainWindow):
         self._refresh_table()
 
     def on_device_added(self, port: str, serial: str):
+        log.info("sync start: port=%s serial=%s", port, serial)
         if self.combo.findData(serial) < 0:
             self.combo.addItem(f"{serial} ({port})", serial)
         self.combo.setCurrentIndex(self.combo.findData(serial))
@@ -372,9 +376,11 @@ class MainWindow(QMainWindow):
             parts.append(f"新下载 {len(downloaded)} 个")
         if failed:
             parts.append(f"失败 {len(failed)} 个")
+        log.info("sync finished: serial=%s downloaded=%d failed=%d", serial, len(downloaded), len(failed))
         self.statusBar().showMessage("，".join(parts), 8000)
 
     def on_sync_error(self, serial: str, msg: str):
+        log.error("sync error: serial=%s msg=%s", serial, msg)
         for row in self._files.get(serial, []):
             if row["status"].startswith("下载中"):
                 row["status"] = "下载失败"
