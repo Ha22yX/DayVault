@@ -8,6 +8,7 @@ static const int32_t kQ15One = 32768;
 static const int32_t kHealthyMinWeightQ15 = 3277;
 static const int32_t kHealthyMaxWeightQ15 = kQ15One - kHealthyMinWeightQ15;
 static const int32_t kAlignmentThresholdQ15 = 24576;
+static const uint32_t kHighPassDropNumerator = 20588742u;
 
 static int32_t abs_i32(int32_t value)
 {
@@ -54,7 +55,7 @@ void AudioFusion::reset(uint32_t sample_rate)
     memset(history_b_, 0, sizeof(history_b_));
     history_write_ = 0u;
     history_count_ = 0u;
-    const uint32_t alpha_drop = sample_rate ? (205887u / sample_rate) : 1284u;
+    const uint32_t alpha_drop = sample_rate ? (kHighPassDropNumerator / sample_rate) : 1284u;
     hp_alpha_q15_ = alpha_drop < 32767u ? kQ15One - (int32_t)alpha_drop : 0u;
     weight_a_q15_ = kQ15One / 2;
     memset(&stats_, 0, sizeof(stats_));
@@ -121,7 +122,7 @@ void AudioFusion::update_correlation()
 
     stats_.best_lag = best_lag;
     stats_.correlation_q15 = best_correlation;
-    stats_.lag_alignment_active = abs_i32(best_correlation) >= kAlignmentThresholdQ15;
+    stats_.lag_alignment_active = best_correlation >= kAlignmentThresholdQ15;
 }
 
 void AudioFusion::process(const int16_t* a, const int16_t* b, int16_t* mono,
@@ -195,19 +196,25 @@ void AudioFusion::process(const int16_t* a, const int16_t* b, int16_t* mono,
     const uint32_t score_b = b_.noise_estimate + block_rough_b + impulse_b * 2048u +
                              clipped_b * 1024u;
     int32_t target_weight_a = kQ15One / 2;
+    bool returning_to_neutral = true;
     if ((faults & AUDIO_FUSION_FAULT_A) != 0u && (faults & AUDIO_FUSION_FAULT_B) == 0u) {
         target_weight_a = 0;
+        returning_to_neutral = false;
     } else if ((faults & AUDIO_FUSION_FAULT_B) != 0u &&
                (faults & AUDIO_FUSION_FAULT_A) == 0u) {
         target_weight_a = kQ15One;
+        returning_to_neutral = false;
     } else if (score_a * 100u < score_b * 70u) {
         target_weight_a = kHealthyMaxWeightQ15;
+        returning_to_neutral = false;
     } else if (score_b * 100u < score_a * 70u) {
         target_weight_a = kHealthyMinWeightQ15;
+        returning_to_neutral = false;
     }
 
     const int32_t difference = target_weight_a - weight_a_q15_;
-    const int32_t step_limit = difference > 0 ? kMaxWeightStepQ15 : kMaxWeightStepQ15 / 2;
+    const int32_t step_limit = returning_to_neutral ? kMaxWeightStepQ15 / 2 :
+                                                      kMaxWeightStepQ15;
     if (difference > step_limit) weight_a_q15_ += step_limit;
     else if (difference < -step_limit) weight_a_q15_ -= step_limit;
     else weight_a_q15_ = target_weight_a;

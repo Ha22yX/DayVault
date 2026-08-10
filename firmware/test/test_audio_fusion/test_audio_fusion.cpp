@@ -147,6 +147,43 @@ void test_weight_change_is_bounded_per_block(void)
     }
 }
 
+void test_high_pass_removes_dc_within_one_block(void)
+{
+    AudioFusion fusion;
+    fusion.reset(kRate);
+    for (uint32_t i = 0; i < kFrames; i++) {
+        channel_a[i] = 12000;
+        channel_b[i] = 12000;
+    }
+    fusion.process(channel_a, channel_b, mono, kFrames);
+
+    TEST_ASSERT_TRUE(abs_i32(mono[kFrames - 1u]) < 500);
+}
+
+void test_channel_swap_has_symmetric_weight_trajectory(void)
+{
+    AudioFusion a_clean;
+    AudioFusion b_clean;
+    a_clean.reset(kRate);
+    b_clean.reset(kRate);
+    uint32_t tone_phase = 0u;
+    uint32_t noise_state = 0x4a3b2c1du;
+
+    for (uint32_t block = 0; block < 12u; block++) {
+        make_tone(channel_a, kFrames, &tone_phase, 9000);
+        make_noise(channel_b, kFrames, &noise_state, 12000);
+        a_clean.process(channel_a, channel_b, mono, kFrames);
+        const AudioFusionStats a_clean_stats = a_clean.stats();
+
+        b_clean.process(channel_b, channel_a, mono, kFrames);
+        const AudioFusionStats b_clean_stats = b_clean.stats();
+        TEST_ASSERT_INT_WITHIN(1, a_clean_stats.weight_a_q15,
+                               b_clean_stats.weight_b_q15);
+        TEST_ASSERT_INT_WITHIN(1, a_clean_stats.weight_b_q15,
+                               b_clean_stats.weight_a_q15);
+    }
+}
+
 void test_delayed_correlated_channels_report_lag_and_high_correlation(void)
 {
     AudioFusion fusion;
@@ -176,6 +213,23 @@ void test_weak_correlation_does_not_enable_coherent_alignment(void)
 
     const AudioFusionStats stats = fusion.stats();
     TEST_ASSERT_TRUE(abs_i32(stats.correlation_q15) < 24000);
+    TEST_ASSERT_FALSE(stats.lag_alignment_active);
+}
+
+void test_anti_correlated_delayed_channels_do_not_enable_alignment(void)
+{
+    AudioFusion fusion;
+    fusion.reset(kRate);
+    uint32_t noise_state = 0x0badc0deu;
+    for (uint32_t i = 0; i < kFrames; i++) {
+        channel_a[i] = (int16_t)(((int32_t)(xorshift32(&noise_state) & 0xffffu) - 32768) / 4);
+        channel_b[i] = i >= 3u ? (int16_t)-channel_a[i - 3u] : 0;
+    }
+    fusion.process(channel_a, channel_b, mono, kFrames);
+
+    const AudioFusionStats stats = fusion.stats();
+    TEST_ASSERT_INT_WITHIN(1, 3, stats.best_lag);
+    TEST_ASSERT_TRUE(stats.correlation_q15 < -24000);
     TEST_ASSERT_FALSE(stats.lag_alignment_active);
 }
 
@@ -223,8 +277,11 @@ int main(void)
     RUN_TEST(test_clipped_channel_falls_back_to_healthy_channel);
     RUN_TEST(test_persistent_fault_does_not_clear_when_block_counter_wraps);
     RUN_TEST(test_weight_change_is_bounded_per_block);
+    RUN_TEST(test_high_pass_removes_dc_within_one_block);
+    RUN_TEST(test_channel_swap_has_symmetric_weight_trajectory);
     RUN_TEST(test_delayed_correlated_channels_report_lag_and_high_correlation);
     RUN_TEST(test_weak_correlation_does_not_enable_coherent_alignment);
+    RUN_TEST(test_anti_correlated_delayed_channels_do_not_enable_alignment);
     RUN_TEST(test_opposing_and_adding_full_scale_inputs_saturate_safely);
     RUN_TEST(test_reset_restores_neutral_deterministic_state);
     return UNITY_END();
