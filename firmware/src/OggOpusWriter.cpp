@@ -96,7 +96,7 @@ bool OggOpusWriter::add_packet(const uint8_t* packet, uint16_t packet_size, uint
         packet == nullptr) return false;
     const bool final_packet = valid_input_samples < kFrameSamples;
     if (final_packets_started_ && !final_packet) return false;
-    if (final_packet && packet_count_ == kMaxPacketsPerPage - 1u &&
+    if (final_packet && !final_packets_started_ && packet_count_ > 0u &&
         !flush_audio_page(false)) return false;
     if (packet_count_ == kMaxPacketsPerPage) return false;
 

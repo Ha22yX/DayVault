@@ -299,3 +299,76 @@ by GCC `.su` files, but it is covered comfortably by this remaining margin.
   round introduced no new compiler or linker failures.
 - Real-time encode latency and physical stop-boundary capture still need a separately
   authorized hardware validation pass. This round intentionally performed none.
+
+---
+
+## Independent Review Fix Round 2/5
+
+Date: 2026-08-11
+Review input: `.superpowers/sdd/2026-08-11-opus-recording/task-6-rereview-1.md`
+
+The remaining combined Ogg final-boundary Critical was reproduced and fixed. No hardware,
+serial, microphone, USB-device, DFU, option-byte, or flashing operation was performed.
+
+### RED Evidence
+
+Added `test_short_then_lookahead_at_page_boundary_stay_together_on_eos` with the exact
+production-reachable sequence: 48 full 320-valid packets, one 300-valid short packet, and
+one zero-valid lookahead packet. Before the production change, focused Ogg testing reported
+1 failed and 15 passed; the new test failed immediately after the short packet with
+`Expected 3 Was 2`, proving the writer had not separated the 48 complete packets before
+entering finalization.
+
+### Implementation
+
+`OggOpusWriter::add_packet()` now flushes buffered ordinary packets only on the transition
+to the first final packet (`final_packet && !final_packets_started_`). It performs that
+transition before appending the short packet. Once `final_packets_started_` is true, later
+short or zero-valid packets are buffered with the first final packet until `finish()` emits
+their shared EOS page, including when their combined packet count reaches the normal
+50-packet rollover boundary. Ordinary full packet 50 still flushes immediately.
+
+The combined regression validates:
+
+- Sequence 2 is non-EOS and contains exactly 48 full packets.
+- Sequence 2 granule is `312 + 48 * 320 * 3 = 46392`.
+- Sequence 3 has EOS set and contains the short and lookahead packets as two laces.
+- Sequence 3 granule is `312 + (48 * 320 + 300) * 3 = 47292`.
+- Packet payload placement, page lengths, sequence numbers, flags, monotonic granules, and
+  all page CRCs are correct.
+
+The existing rollover sink-failure fixture used `valid_samples = 160` despite intending to
+exercise ordinary full-frame packet 50. It was corrected to 320 so it continues to test the
+production rollover path rather than finalization behavior.
+
+### GREEN Evidence
+
+- Focused Ogg writer: 16 passed.
+- Real libopus encoder/finalization: 9 passed.
+- Complete focused native matrix: 83 passed.
+- Source contracts: 17 passed.
+- ARM: `pio run -e dayvault -j 1` succeeded.
+- `git diff --check` passed with only repository line-ending policy warnings.
+
+### Resource, Symbol, Stack, And Safety Audit
+
+- Flash: 219,284 B of 262,144 B, leaving 42,860 B.
+- SRAM1 `.data + .bss + .noinit`: 71,880 B. Including the 1,536 B linker
+  heap/stack reservation leaves 57,656 B before runtime stack.
+- SRAM2 remains exactly 32,768 B at `0x10000000` for the shared transfer workspace.
+- The conservative 19 KiB recording call-path allowance remains unchanged and leaves
+  38,200 B SRAM1 headroom, exceeding the required 8 KiB by 30,008 B.
+- Recorder, Ogg, encoder, `opus_encode_native`, `silk_Encode`, and
+  `silk_encode_frame_FIX` symbols remain present. Decoder and temporary linker-probe
+  symbols remain absent.
+- No `0x1FFF7800`, option-byte programming, boot-option mutation, production
+  `wav_build_header`, production `f_lseek`, or mono production PDM read was found.
+- Software DFU remains `0x1FFF0000u`; USB VID remains `0x0483`; `.OPUS` production and
+  legacy `.WAV` deletion compatibility remain intact.
+
+### Self-Review And Concern
+
+The mutation guarded by the new test is removing the first-final state check or allowing a
+later final packet to preflush a page that already contains a short packet. Either change
+breaks the asserted page count/flags before EOS. Physical decoder interoperability and
+stop-boundary timing remain for a separately authorized hardware pass; none was attempted.
