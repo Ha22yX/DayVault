@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 from . import proto, store
+from .dio import Bulk2Unsupported, Get2Unsupported
 
 
 def plan_downloads(remote: list[tuple[str, int]], state: dict[str, int]) -> list[str]:
@@ -67,12 +68,36 @@ def sync_device(conn, serial: str, config: dict,
         part = folder / (name + ".part")
         final = folder / name
         ok = False
+        bulk2_supported = hasattr(conn, "download_bulk2")
+        get2_supported = hasattr(conn, "download_get2")
         for attempt in range(3):
             if attempt:
                 time.sleep(0.25)
             try:
-                n = conn.download_dl2(name, str(part), progress_cb=progress_cb,
-                                      interrupt=interrupt)
+                n = None
+                if bulk2_supported:
+                    try:
+                        n = conn.download_bulk2(
+                            name, str(part), expected_size=size,
+                            progress_cb=progress_cb, interrupt=interrupt,
+                        )
+                    except Bulk2Unsupported:
+                        bulk2_supported = False
+
+                if n is None and get2_supported:
+                    try:
+                        n = conn.download_get2(
+                            name, str(part), expected_size=size,
+                            progress_cb=progress_cb, interrupt=interrupt,
+                        )
+                    except Get2Unsupported:
+                        get2_supported = False
+
+                if n is None:
+                    n = conn.download_dl2(
+                        name, str(part), progress_cb=progress_cb,
+                        interrupt=interrupt,
+                    )
                 if n != size:
                     raise IOError(f"size mismatch {n} != {size}")
                 part.replace(final)
@@ -82,10 +107,6 @@ def sync_device(conn, serial: str, config: dict,
                 raise
             except Exception as e:
                 log.warning("download %s attempt %d failed: %s", name, attempt + 1, e)
-                try:
-                    part.unlink(missing_ok=True)
-                except Exception:
-                    pass
         if ok:
             state[name] = size
             store.save_state(serial, state)

@@ -32,7 +32,7 @@
     <td width="50%" align="center">
       <img src=".github/assets/dayvault-sync-app.png" alt="DayVault Sync Windows app downloading audio from the microphone module" />
       <br />
-      <strong>Windows sync app.</strong> Detects the microphone module over USB serial and downloads nightly recordings to the computer.
+      <strong>Windows sync app.</strong> Detects the module over USB and downloads recordings through a resumable, CRC-verified WinUSB path.
     </td>
     <td width="50%" align="center">
       <img src=".github/assets/dayvault-mic-module.jpg" alt="DayVault microphone module prototype connected over USB-C" />
@@ -66,7 +66,7 @@ The repository keeps the full chain visible:
 | --- | --- |
 | Hardware | EasyEDA project, exported netlist, schematic/PCB snapshots, pin maps, BOM, and hardware docs. |
 | Firmware | PlatformIO STM32 firmware sources and tests for recording, storage, USB protocol, WAV writing, and device behavior. |
-| Desktop sync | PySide6 Windows app that watches for the DayVault USB serial device and downloads unsynced audio files. |
+| Desktop sync | PySide6 Windows app with WinUSB bulk export, CRC32 validation, resume, and legacy CDC fallback. |
 | Protocol docs | Serial command reference for listing, downloading, time sync, DFU, battery diagnostics, and file management. |
 
 ## Quickstart
@@ -110,6 +110,8 @@ platformio test
 - Lists remote recordings and downloads files that are new or whose size changed.
 - Writes files to `<sync_folder>\<device_serial>\`.
 - Uses `.part` temporary files and retries failed downloads up to three times.
+- Prefers `BULK2` WinUSB export, then falls back to `GET2` and legacy `DL2`.
+- Streams directly to disk and validates the device/host CRC before finalizing a file.
 - Keeps state in `%APPDATA%\DayVault\state\<serial>.json`.
 - Keeps logs in `%APPDATA%\DayVault\logs\app.log`.
 - Minimizes to the system tray instead of exiting when the tray is available.
@@ -133,7 +135,7 @@ flowchart LR
     Speech["Conversation"] --> Mic["PDM microphones"]
     Mic --> MCU["STM32L452 firmware"]
     MCU --> SD["microSD WAV files"]
-    USB["USB-C serial"] --> Host["DayVault Sync app"]
+    USB["USB-C CDC / WinUSB"] --> Host["DayVault Sync app"]
     Host --> Folder["Per-device sync folder"]
     Folder --> Archive["Transcription / life archive"]
     Host --> MCU
@@ -156,6 +158,7 @@ DayVault/
 - [Sync app documentation](tools/dayvault_sync/README.md)
 - [Hardware documentation index](Docs/README.md)
 - [Serial command reference](Docs/Serial-Command-Reference.md)
+- [High-speed transfer design and measurements](Docs/High-Speed-Transfer.md)
 - [Hardware overview](Docs/01-Hardware-Overview.md)
 - [MCU pinout](Docs/02-MCU-Pinout.md)
 - [BOM](Docs/07-BOM.md)
@@ -169,7 +172,7 @@ Known practical notes:
 
 - Recording and sync behavior should be validated with real devices and logs.
 - Firmware, battery thresholds, storage behavior, acoustic quality, and long-duration reliability still need measured bring-up evidence.
-- The desktop sync tool is Windows-focused and depends on Python, PySide6, and pyserial when run from source.
+- The desktop sync tool is Windows-focused and depends on Python, PySide6, pyserial, PyUSB, and libusb when run from source.
 - No open-source license has been selected yet.
 
 ## Privacy And Safety

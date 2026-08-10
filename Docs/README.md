@@ -12,6 +12,7 @@ EasyEDA source snapshot is `../EDA/DayVault.eprj2`.
 4. [07-BOM.md](07-BOM.md) - primary parts and passive values.
 5. [08-Net-Map.md](08-Net-Map.md) - net-centric endpoint map for debugging and review.
 6. [Serial-Command-Reference.md](Serial-Command-Reference.md) - host/device serial protocol used by firmware and the Windows sync app.
+7. [High-Speed-Transfer.md](High-Speed-Transfer.md) - WinUSB protocol, fallback order, measured throughput, CRC, and resume behavior.
 
 ## Documentation rules
 

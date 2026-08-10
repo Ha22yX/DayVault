@@ -20,3 +20,11 @@ Release/
 *.map
 
 out/
+
+# Python and test output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest_tmp*/
+.pytest-tmp-*/
+hardware_bulk_test.part

@@ -8,8 +8,8 @@ DayVault voice recorder firmware (STM32L452), including the audio download proto
 - USB CDC virtual serial port, **115200 baud**, 8N1.
 - On Windows the device enumerates as `COMx` ("USB 串行设备", VID `0x0483`, PID `0x5740`).
 - Commands are ASCII text lines terminated by `\n` or `\r`. Case-sensitive.
-- The serial console is only active when USB is attached AND the device is NOT in MSC mode
-  (MSC disk export was removed; serial is the only USB function).
+- The normal interface is USB CDC. During a `BULK2` export the firmware briefly
+  re-enumerates as a dedicated WinUSB device (PID `0x5741`), then returns to CDC.
 
 ## 2. Firmware build / flashing
 
@@ -65,7 +65,11 @@ DayVault voice recorder firmware (STM32L452), including the audio download proto
 | `DELOLDEST` | Delete the single oldest completed recording (see §4.1) | `DELOLDEST deleted=1` |
 | `LIST` | List files on SD root with sizes | `LIST mount=0` then `  REC062.WAV 158476` ... `LIST done` |
 | `DOWNLOAD <file>` | Raw file download (see §5.1) | `DLSTART <size>` ... `DLEND read=<n> wr=<n>` |
-| `DL2 <file>` | Chunked ACK download — **preferred** (see §5.2) | `DLSTART <size>` ... `DLEND read=<n>` |
+| `DL2 <file>` | Legacy chunked ACK download (see §5.2) | `DLSTART <size>` ... `DLEND read=<n>` |
+| `GET2 <offset> <file>` | Resumable CRC32-verified continuous CDC export | `GET2START ...`, raw payload, `GET2END ...`, `BENCH e2e ...` |
+| `BULK2 <offset> <file>` | Preferred resumable WinUSB bulk export (see §5) | CDC: `BULK2READY ...`; WinUSB: `GET2START ...`, payload, completion trailer |
+| `BULKSPEED` | Transfer a deterministic 2 MiB WinUSB benchmark payload | Same framing as `BULK2`, with `mode=bench` in the CDC ready line |
+| `SPEED` / `SDSPEED` | Measure CDC transmit / SD multi-block read throughput | `BENCH usb ...` / `BENCH sd ...` |
 | `DFU` | Enter USB DFU bootloader for flashing | (device re-enumerates as DFU) |
 | `MOUNT` | Mount the SD filesystem | `MOUNT fr=0` (0 = OK) |
 | `LTEST` | Long-filename diagnostic: create/readdir/rename/delete a long test name | `LTEST mount=0 ...` |
@@ -97,9 +101,31 @@ This requires the SD volume to be persistently mounted at boot (§3).
 
 ## 5. Audio download protocol
 
-Two download methods exist. **Use `DL2`** (chunked ACK) — it is robust against the USB CDC
-transmit-timeout issue that breaks long `DOWNLOAD` transfers. A working host script lives at
-`out/download2.ps1` (`.\out\download2.ps1 -File REC062.WAV`).
+Use `BULK2` when available. The desktop sync tool automatically tries `BULK2`,
+falls back to `GET2`, then uses legacy `DL2` only for older firmware.
+
+### 5.0 `BULK2 <offset> <file>` (preferred)
+
+1. Host sends `BULK2 0 REC062.WAV\r\n` over CDC.
+2. Device replies `BULK2READY size=... offset=... length=...`, disconnects CDC,
+   and enumerates as VID/PID `0483:5741` with bulk IN `0x81` and bulk OUT `0x02`.
+3. Bulk IN sends a `GET2START` line, exactly `length` binary payload bytes, a
+   `GET2END sent=<n> crc32=<crc>` line, then a `BENCH bulk ...` line.
+4. Host validates byte count and CRC32 before sending `DONE\n` to bulk OUT.
+5. Device returns to CDC PID `0x5740`. A partial destination file can be resumed
+   by sending its current length as the next offset.
+
+The completion trailer is appended to the final source buffer and sent in the
+same USB transfer, so payload/trailer framing remains deterministic. The STM32L4
+bulk IN endpoint deliberately uses the reliable single-PMA-buffer path; the HAL
+double-buffer path was rejected after real-hardware tests found block-boundary
+corruption without a throughput benefit.
+
+### 5.0.1 `GET2 <offset> <file>` (CDC fallback)
+
+`GET2` uses the same metadata, CRC32, resume semantics, and completion trailer,
+but keeps the normal CDC interface active. It is the automatic fallback when the
+dedicated WinUSB interface is unavailable.
 
 ### 5.1 `DOWNLOAD <file>` (raw, legacy)
 
@@ -184,3 +210,25 @@ Two ways to enter the ST DFU bootloader for flashing:
 - MSC / USB-disk export was tried and reverted: STM32duino core has no official MSC support;
   the composite and MSC-only experiments did not produce a usable drive. Serial download
   (`DL2`) is the supported export path.
+# Performance benchmarks
+
+The firmware keeps the legacy benchmark text and also emits one
+machine-readable result line:
+
+```text
+BENCH <usb|sd|e2e> bytes=<count> ms=<elapsed> kib_s=<rate> crc32=<8-hex-digits>
+```
+
+- `SPEED` streams a deterministic 2 MiB pattern and reports `BENCH usb`.
+- `SDSPEED` reads up to 2 MiB from the largest SD file and reports `BENCH sd`.
+- `GET2 <offset> <filename>` reports `BENCH e2e` after `GET2END`.
+- `BULKSPEED` reports `BENCH bulk` after the 2 MiB binary payload.
+
+Validated on the DayVault prototype (2026-08-11): SD multi-block read about
+`671 KiB/s`, continuous CDC about `235 KiB/s`, and reliable WinUSB bulk about
+`225-227 KiB/s`. Three consecutive 2 MiB WinUSB transfers matched both host and
+device CRC32; a 4,508,018-byte real recording and a resumed transfer also matched.
+
+CRC32 uses the IEEE polynomial and covers exactly the payload byte count in the
+same result line. Host tools should validate both byte count and CRC before
+using a performance result.

@@ -87,6 +87,29 @@ class _TrackingConn:
         return self._conn.download_dl2(name, dest_path, progress_cb, ack_byte, idle_ms,
                                        interrupt)
 
+    def download_get2(self, name: str, dest_path: str, expected_size: int | None = None,
+                      progress_cb=None, interrupt=None) -> int:
+        self._current = name
+        if self._in_list:
+            self._in_list = False
+            self._flush()
+        return self._conn.download_get2(
+            name, dest_path, expected_size=expected_size,
+            progress_cb=progress_cb, interrupt=interrupt,
+        )
+
+    def download_bulk2(self, name: str, dest_path: str,
+                       expected_size: int | None = None,
+                       progress_cb=None, interrupt=None) -> int:
+        self._current = name
+        if self._in_list:
+            self._in_list = False
+            self._flush()
+        return self._conn.download_bulk2(
+            name, dest_path, expected_size=expected_size,
+            progress_cb=progress_cb, interrupt=interrupt,
+        )
+
     def close(self):
         self._conn.close()
 

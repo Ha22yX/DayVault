@@ -11,9 +11,14 @@
 #include "DeviceTime.h"
 #include "Battery.h"
 #include "TransferBuffer.h"
+#include "Crc32.h"
+#include "ExportProtocol.h"
+#include "WinUsbDevice.h"
 #include <string.h>
 
 extern "C" void SystemClock_Config(void);
+extern "C" void CDC_init(void);
+extern "C" void CDC_deInit(void);
 
 void SystemClock_Config(void)
 {
@@ -116,6 +121,21 @@ static void dbg_report_last_step(void)
 
 static uint8_t audio_buf[PDM_RING_BYTES];
 static RingBuf audio_rb;
+
+static void print_benchmark(const char* layer, uint32_t byte_count,
+                            uint32_t duration_ms, uint32_t crc32)
+{
+    if (duration_ms == 0) duration_ms = 1;
+    const uint32_t kib_per_second = (uint32_t)(
+        ((uint64_t)byte_count * 1000u) / ((uint64_t)duration_ms * 1024u));
+    char crc_text[9];
+    snprintf(crc_text, sizeof(crc_text), "%08lX", (unsigned long)crc32);
+    Serial.print("BENCH "); Serial.print(layer);
+    Serial.print(" bytes="); Serial.print(byte_count);
+    Serial.print(" ms="); Serial.print(duration_ms);
+    Serial.print(" kib_s="); Serial.print(kib_per_second);
+    Serial.print(" crc32="); Serial.println(crc_text);
+}
 
 static int rec_name_cmp(const char* a, const char* b);
 
@@ -319,6 +339,25 @@ static void download_file(const char* fname)
     Serial.print(" wr="); Serial.println(total_written);
 }
 
+static bool serial_write_all(const uint8_t* data, size_t length)
+{
+    size_t offset = 0;
+    uint32_t last_progress = millis();
+    while (offset < length) {
+        dbg_iwdg_kick();
+        const size_t written = Serial.write(data + offset, length - offset);
+        if (written > 0) {
+            offset += written;
+            last_progress = millis();
+        } else if ((millis() - last_progress) >= 10000u) {
+            return false;
+        } else {
+            delay(1);
+        }
+    }
+    return true;
+}
+
 static void download_file2(const char* fname)
 {
     FIL f;
@@ -332,17 +371,311 @@ static void download_file2(const char* fname)
     uint32_t size = (uint32_t)f_size(&f);
     Serial.print("DLSTART "); Serial.println(size);
     uint32_t total = 0;
+    uint32_t crc = 0;
+    const uint32_t started_ms = millis();
     while (total < size) {
         dbg_iwdg_kick();
         if (f_read(&f, buf, (UINT)transfer_buffer_size(), &rd) != FR_OK || rd == 0) break;
-        total += rd;
         /* Stream continuously; Serial.write blocks when the CDC TX ring is full,
            providing natural backpressure without per-chunk ACK round-trips. */
-        Serial.write(buf, rd);
+        if (!serial_write_all(buf, rd)) break;
+        total += rd;
+        crc = crc32_update(crc, buf, rd);
     }
     Serial.flush();
+    const uint32_t elapsed_ms = millis() - started_ms;
     f_close(&f);
     Serial.print("DLEND read="); Serial.println(total);
+    print_benchmark("e2e", total, elapsed_ms, crc);
+}
+
+static void download_file_get2(const ExportRequest* request)
+{
+    FIL file;
+    char path[EXPORT_FILENAME_BYTES + 4];
+    snprintf(path, sizeof(path), "0:/%s", request->filename);
+    if (!fs_mount()) {
+        Serial.println("GET2FAIL reason=mount");
+        return;
+    }
+    if (f_open(&file, path, FA_READ) != FR_OK) {
+        Serial.println("GET2FAIL reason=open");
+        return;
+    }
+
+    const uint32_t total_size = (uint32_t)f_size(&file);
+    if (request->offset > total_size) {
+        Serial.print("GET2FAIL reason=offset size="); Serial.println(total_size);
+        f_close(&file);
+        return;
+    }
+    if (f_lseek(&file, request->offset) != FR_OK) {
+        Serial.println("GET2FAIL reason=seek");
+        f_close(&file);
+        return;
+    }
+
+    const uint32_t length = total_size - request->offset;
+    Serial.print("GET2START size="); Serial.print(total_size);
+    Serial.print(" offset="); Serial.print(request->offset);
+    Serial.print(" length="); Serial.println(length);
+
+    uint32_t sent = 0;
+    uint32_t crc = 0;
+    uint8_t* const buffer = transfer_buffer(0);
+    const uint32_t started_ms = millis();
+    while (sent < length) {
+        dbg_iwdg_kick();
+        const uint32_t remaining = length - sent;
+        const UINT wanted = (UINT)(remaining < transfer_buffer_size()
+            ? remaining : transfer_buffer_size());
+        UINT read = 0;
+        if (f_read(&file, buffer, wanted, &read) != FR_OK || read == 0) break;
+        if (!serial_write_all(buffer, read)) break;
+        crc = crc32_update(crc, buffer, read);
+        sent += read;
+    }
+    Serial.flush();
+    const uint32_t elapsed_ms = millis() - started_ms;
+    f_close(&file);
+
+    char crc_text[9];
+    snprintf(crc_text, sizeof(crc_text), "%08lX", (unsigned long)crc);
+    Serial.print("GET2END sent="); Serial.print(sent);
+    Serial.print(" crc32="); Serial.println(crc_text);
+    print_benchmark("e2e", sent, elapsed_ms, crc);
+}
+
+static bool winusb_wait_configured(uint32_t timeout_ms)
+{
+    const uint32_t started = millis();
+    while (!winusb_is_configured()) {
+        dbg_iwdg_kick();
+        if (digitalRead(PIN_USB_DETECT) == LOW ||
+            (millis() - started) >= timeout_ms) {
+            return false;
+        }
+        delay(1);
+    }
+    return true;
+}
+
+static bool winusb_write_transfer(const uint8_t* data, size_t length)
+{
+    const uint32_t timeout_ms = 10000u;
+    uint32_t started = millis();
+    while (!winusb_send(data, length)) {
+        dbg_iwdg_kick();
+        if (!winusb_is_configured() || (millis() - started) >= timeout_ms) {
+            return false;
+        }
+        delay(1);
+    }
+
+    started = millis();
+    while (winusb_tx_busy()) {
+        dbg_iwdg_kick();
+        if (!winusb_is_configured() || (millis() - started) >= timeout_ms) {
+            return false;
+        }
+        delay(1);
+    }
+    return true;
+}
+
+static bool winusb_write_all(const uint8_t* data, size_t length)
+{
+    return winusb_write_transfer(data, length);
+}
+
+static bool winusb_wait_ack(uint32_t timeout_ms)
+{
+    const uint32_t started = millis();
+    while (!winusb_ack_received()) {
+        dbg_iwdg_kick();
+        if (!winusb_is_configured() || (millis() - started) >= timeout_ms) {
+            return false;
+        }
+        delay(1);
+    }
+    return true;
+}
+
+static const uint32_t kWinUsbTrailerReserve = 192u;
+static const uint32_t kWinUsbTransferBytes =
+    TRANSFER_BUFFER_BYTES - kWinUsbTrailerReserve;
+static const uint32_t kWinUsbAckTimeoutMs = 30000u;
+
+static bool winusb_write_completion_frame(uint8_t* buffer, size_t data_length,
+                                          uint32_t sent, uint32_t elapsed_ms,
+                                          uint32_t crc)
+{
+    if (buffer == nullptr || data_length > kWinUsbTransferBytes) return false;
+    size_t frame_length = data_length;
+    const size_t trailer_length = export_format_completion(
+        (char*)(buffer + frame_length),
+        transfer_buffer_size() - frame_length,
+        "bulk", sent, elapsed_ms, crc);
+    if (trailer_length == 0u) return false;
+    frame_length += trailer_length;
+
+    if ((frame_length % 64u) == 0u) {
+        if (frame_length >= transfer_buffer_size()) return false;
+        buffer[frame_length++] = '\n';
+    }
+    return winusb_write_all(buffer, frame_length);
+}
+
+static void download_file_bulk2(const ExportRequest* request)
+{
+    FIL file;
+    char path[EXPORT_FILENAME_BYTES + 4];
+    snprintf(path, sizeof(path), "0:/%s", request->filename);
+    if (!fs_mount()) {
+        Serial.println("BULK2FAIL reason=mount");
+        return;
+    }
+    if (f_open(&file, path, FA_READ) != FR_OK) {
+        Serial.println("BULK2FAIL reason=open");
+        return;
+    }
+
+    const uint32_t total_size = (uint32_t)f_size(&file);
+    f_close(&file);
+    if (request->offset > total_size) {
+        Serial.print("BULK2FAIL reason=offset size="); Serial.println(total_size);
+        return;
+    }
+
+    const uint32_t length = total_size - request->offset;
+    Serial.print("BULK2READY size="); Serial.print(total_size);
+    Serial.print(" offset="); Serial.print(request->offset);
+    Serial.print(" length="); Serial.println(length);
+    Serial.flush();
+    delay(100);
+
+    CDC_deInit();
+    delay(100);
+    bool started = winusb_start();
+    bool connected = started && winusb_wait_configured(15000u);
+    uint32_t sent = 0;
+    uint32_t crc = 0;
+    uint32_t elapsed_ms = 0;
+    bool completion_sent = false;
+
+    if (connected && f_open(&file, path, FA_READ) == FR_OK) {
+        if (f_lseek(&file, request->offset) == FR_OK) {
+            char header[96];
+            const int header_length = snprintf(
+                header, sizeof(header),
+                "GET2START size=%lu offset=%lu length=%lu\r\n",
+                (unsigned long)total_size,
+                (unsigned long)request->offset,
+                (unsigned long)length);
+            connected = header_length > 0 &&
+                winusb_write_all((const uint8_t*)header, (size_t)header_length);
+
+            uint8_t* const buffer = transfer_buffer(0);
+            const uint32_t transfer_started = millis();
+            while (connected && sent < length) {
+                dbg_iwdg_kick();
+                const uint32_t remaining = length - sent;
+                const UINT wanted = (UINT)(remaining < kWinUsbTransferBytes
+                    ? remaining : kWinUsbTransferBytes);
+                UINT read = 0;
+                if (f_read(&file, buffer, wanted, &read) != FR_OK || read == 0) {
+                    connected = false;
+                    break;
+                }
+                crc = crc32_update(crc, buffer, read);
+                sent += read;
+                if (sent == length) {
+                    elapsed_ms = millis() - transfer_started;
+                    connected = winusb_write_completion_frame(
+                        buffer, read, sent, elapsed_ms, crc);
+                    completion_sent = connected;
+                } else if (read != wanted || !winusb_write_all(buffer, read)) {
+                    connected = false;
+                    break;
+                }
+            }
+            elapsed_ms = millis() - transfer_started;
+            if (connected && length == 0u) {
+                connected = winusb_write_completion_frame(
+                    buffer, 0u, 0u, elapsed_ms, 0u);
+                completion_sent = connected;
+            }
+        }
+        f_close(&file);
+    }
+
+    if (connected && completion_sent) winusb_wait_ack(kWinUsbAckTimeoutMs);
+
+    if (started) winusb_stop();
+    delay(100);
+    CDC_init();
+}
+
+static void benchmark_winusb(void)
+{
+    const uint32_t total_size = 2u * 1024u * 1024u;
+    uint8_t* const buffer = transfer_buffer(1);
+    const uint32_t block_size = kWinUsbTransferBytes;
+    for (uint32_t i = 0; i < block_size; ++i) buffer[i] = (uint8_t)i;
+
+    Serial.print("BULK2READY size="); Serial.print(total_size);
+    Serial.print(" offset=0 length="); Serial.print(total_size);
+    Serial.println(" mode=bench");
+    Serial.flush();
+    delay(100);
+
+    CDC_deInit();
+    delay(100);
+    const bool started = winusb_start();
+    bool connected = started && winusb_wait_configured(15000u);
+    uint32_t sent = 0;
+    uint32_t crc = 0;
+    uint32_t elapsed_ms = 0;
+    bool completion_sent = false;
+
+    if (connected) {
+        char header[96];
+        const int header_length = snprintf(
+            header, sizeof(header),
+            "GET2START size=%lu offset=0 length=%lu\r\n",
+            (unsigned long)total_size, (unsigned long)total_size);
+        connected = header_length > 0 &&
+            winusb_write_all((const uint8_t*)header, (size_t)header_length);
+
+        const uint32_t transfer_started = millis();
+        while (connected && sent < total_size) {
+            dbg_iwdg_kick();
+            uint32_t length = block_size;
+            if (sent + length > total_size) length = total_size - sent;
+            crc = crc32_update(crc, buffer, length);
+            sent += length;
+            bool write_ok;
+            if (sent == total_size) {
+                elapsed_ms = millis() - transfer_started;
+                write_ok = winusb_write_completion_frame(
+                    buffer, length, sent, elapsed_ms, crc);
+                completion_sent = write_ok;
+            } else {
+                write_ok = winusb_write_all(buffer, length);
+            }
+            if (!write_ok) {
+                connected = false;
+                break;
+            }
+        }
+        elapsed_ms = millis() - transfer_started;
+    }
+
+    if (connected && completion_sent) winusb_wait_ack(kWinUsbAckTimeoutMs);
+
+    if (started) winusb_stop();
+    delay(100);
+    CDC_init();
 }
 
 /* Jump into the system bootloader. Called from the very start of setup() after a
@@ -681,7 +1014,7 @@ loop_restart:
     }
 
     if (Serial.available()) {
-        static char line[64];
+        static char line[128];
         static size_t n = 0;
         while (Serial.available()) {
             char c = (char)Serial.read();
@@ -749,6 +1082,24 @@ loop_restart:
                         sample_stats();
                     } else if (strncmp(line, "DOWNLOAD ", 9) == 0) {
                         download_file(line + 9);
+                    } else if (strcmp(line, "BULKSPEED") == 0) {
+                        if (rec_active) rec_stop();
+                        benchmark_winusb();
+                    } else if (strncmp(line, "BULK2 ", 6) == 0) {
+                        char request_line[128];
+                        snprintf(request_line, sizeof(request_line),
+                                 "GET2 %s", line + 6);
+                        ExportRequest request;
+                        if (export_parse_get2(request_line, &request)) {
+                            if (rec_active) rec_stop();
+                            download_file_bulk2(&request);
+                        } else {
+                            Serial.println("BULK2FAIL reason=request");
+                        }
+                    } else if (strncmp(line, "GET2 ", 5) == 0) {
+                        ExportRequest request;
+                        if (export_parse_get2(line, &request)) download_file_get2(&request);
+                        else Serial.println("GET2FAIL reason=request");
                     } else if (strncmp(line, "DL2 ", 4) == 0) {
                         download_file2(line + 4);
                     } else if (strncmp(line, "REC", 3) == 0 && line[3] != ' ') {
@@ -790,11 +1141,14 @@ loop_restart:
                         snprintf(p2, sizeof(p2), "0:/%s", fname);
                         if (f_open(&f2, p2, FA_READ) != FR_OK) { Serial.println("SDSPEED open FAIL"); return; }
                         uint32_t rd2 = 0, n2 = 0;
+                        uint32_t crc2 = 0;
+                        sd_reset_stats();
                         uint32_t t0 = millis();
                         while (rd2 < 2u * 1024u * 1024u) {
                             dbg_iwdg_kick();
                             UINT r2;
                             if (f_read(&f2, big, (UINT)transfer_buffer_size(), &r2) != FR_OK || r2 == 0) break;
+                            crc2 = crc32_update(crc2, big, r2);
                             rd2 += r2; n2++;
                         }
                         uint32_t dt = millis() - t0;
@@ -802,20 +1156,35 @@ loop_restart:
                         Serial.print("SDSPEED bytes="); Serial.print(rd2);
                         Serial.print(" ms="); Serial.print(dt);
                         Serial.print(" KB/s="); Serial.println(dt ? (rd2 * 1000u / dt / 1024u) : 0u);
+                        print_benchmark("sd", rd2, dt, crc2);
+                        sd_stats_t sd_stats;
+                        sd_get_stats(&sd_stats);
+                        Serial.print("SDSTATS cmd17="); Serial.print(sd_stats.single_read_commands);
+                        Serial.print(" cmd18="); Serial.print(sd_stats.multi_read_commands);
+                        Serial.print(" fallback="); Serial.print(sd_stats.multi_read_fallbacks);
+                        Serial.print(" sectors="); Serial.print(sd_stats.sectors_read);
+                        Serial.print(" errors="); Serial.println(sd_stats.read_errors);
                     } else if (strncmp(line, "SPEED", 5) == 0) {
-                        static uint8_t sp_buf[2048];
-                        for (int i = 0; i < 2048; i++) sp_buf[i] = (uint8_t)i;
+                        uint8_t* const sp_buf = transfer_buffer(1);
+                        const uint32_t sp_block = (uint32_t)transfer_buffer_size();
+                        for (uint32_t i = 0; i < sp_block; i++) sp_buf[i] = (uint8_t)i;
                         uint32_t sp_total = 2u * 1024u * 1024u;
+                        uint32_t sp_crc = 0;
                         Serial.print("SPEEDSTART "); Serial.println(sp_total);
-                        for (uint32_t sent = 0; sent < sp_total; ) {
+                        uint32_t sp_started = millis();
+                        uint32_t sp_sent = 0;
+                        while (sp_sent < sp_total) {
                             dbg_iwdg_kick();
-                            uint32_t n = 2048;
-                            if (sent + n > sp_total) n = sp_total - sent;
-                            Serial.write(sp_buf, n);
-                            sent += n;
+                            uint32_t n = sp_block;
+                            if (sp_sent + n > sp_total) n = sp_total - sp_sent;
+                            if (!serial_write_all(sp_buf, n)) break;
+                            sp_crc = crc32_update(sp_crc, sp_buf, n);
+                            sp_sent += n;
                         }
                         Serial.flush();
+                        uint32_t sp_elapsed = millis() - sp_started;
                         Serial.println("SPEEDEND");
+                        print_benchmark("usb", sp_sent, sp_elapsed, sp_crc);
                     } else if (strncmp(line, "BAT10", 5) == 0) {
                         uint32_t sum = 0, cnt = 0, mn = 0xFFFFFFFF, mx = 0;
                         uint32_t t0 = millis();
