@@ -65,6 +65,18 @@ void test_compatibility_wrapper_limits_each_read_to_128_samples(void)
     TEST_ASSERT_EQUAL_UINT32(0u, pdm_compat_read_chunk(0u));
 }
 
+void test_frozen_pair_recovery_releases_live_writer_margin(void)
+{
+    const PdmRingRecovery live = pdm_ring_recover_pair(
+        10064u, 10064u, 10000u, kBufferSamples, kFreeMargin);
+    const PdmRingRecovery frozen = pdm_ring_recover_frozen_pair(
+        10064u, 10064u, 10000u, kBufferSamples);
+
+    TEST_ASSERT_EQUAL_UINT32(0u, live.available);
+    TEST_ASSERT_EQUAL_UINT32(64u, frozen.available);
+    TEST_ASSERT_EQUAL_UINT32(10000u, frozen.common_consumed);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -75,5 +87,6 @@ int main(void)
     RUN_TEST(test_recovery_uses_one_common_consumed_index);
     RUN_TEST(test_recovery_does_not_invent_samples_for_a_lagging_channel);
     RUN_TEST(test_compatibility_wrapper_limits_each_read_to_128_samples);
+    RUN_TEST(test_frozen_pair_recovery_releases_live_writer_margin);
     return UNITY_END();
 }

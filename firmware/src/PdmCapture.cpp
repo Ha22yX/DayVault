@@ -27,6 +27,7 @@ static volatile uint32_t pdm_dma_pos2 = 0;
 static volatile PdmCaptureStats pdm_dma_stats = {0};
 static volatile uint32_t pdm_dma_completed_a = 0;
 static volatile uint32_t pdm_dma_completed_b = 0;
+static volatile bool pdm_dma_frozen = false;
 
 static uint32_t pdm_irq_lock(void)
 {
@@ -214,6 +215,7 @@ void pdm_start(void)
     memset((void*)&pdm_dma_stats, 0, sizeof(pdm_dma_stats));
     pdm_dma_completed_a = 0;
     pdm_dma_completed_b = 0;
+    pdm_dma_frozen = false;
 
     DMA1_CSELR->CSELR &= ~(DMA_CSELR_C4S | DMA_CSELR_C5S);
     PDM_DMA_CH->CCR = 0;
@@ -240,9 +242,19 @@ void pdm_start(void)
 
 void pdm_stop(void)
 {
+    pdm_stop_and_freeze();
+}
+
+void pdm_stop_and_freeze(void)
+{
+    const uint32_t primask = pdm_irq_lock();
     HAL_DFSDM_FilterRegularStop(&hf);
     HAL_DFSDM_FilterRegularStop(&hf0);
-    const uint32_t primask = pdm_irq_lock();
+    pdm_dma_stats.produced_a = pdm_dma_snapshot_produced(
+        PDM_DMA_CH, &pdm_dma_completed_a, DMA_ISR_TCIF5, DMA_IFCR_CTCIF5);
+    pdm_dma_stats.produced_b = pdm_dma_snapshot_produced(
+        PDM_DMA2_CH, &pdm_dma_completed_b, DMA_ISR_TCIF4, DMA_IFCR_CTCIF4);
+    pdm_dma_frozen = true;
     PDM_DMA_CH->CCR &= ~DMA_CCR_EN_Msk;
     PDM_DMA2_CH->CCR &= ~DMA_CCR_EN_Msk;
     HAL_NVIC_DisableIRQ(DMA1_Channel4_IRQn);
@@ -264,16 +276,23 @@ int pdm_dma_read_dual(int16_t* channel_a, int16_t* channel_b, int max_samples)
     if (channel_a == NULL || channel_b == NULL || max_samples <= 0) return 0;
 
     const uint32_t primask = pdm_irq_lock();
-    pdm_dma_stats.produced_a = pdm_dma_snapshot_produced(
-        PDM_DMA_CH, &pdm_dma_completed_a, DMA_ISR_TCIF5, DMA_IFCR_CTCIF5);
-    pdm_dma_stats.produced_b = pdm_dma_snapshot_produced(
-        PDM_DMA2_CH, &pdm_dma_completed_b, DMA_ISR_TCIF4, DMA_IFCR_CTCIF4);
+    const bool frozen = pdm_dma_frozen;
+    if (!frozen) {
+        pdm_dma_stats.produced_a = pdm_dma_snapshot_produced(
+            PDM_DMA_CH, &pdm_dma_completed_a, DMA_ISR_TCIF5, DMA_IFCR_CTCIF5);
+        pdm_dma_stats.produced_b = pdm_dma_snapshot_produced(
+            PDM_DMA2_CH, &pdm_dma_completed_b, DMA_ISR_TCIF4, DMA_IFCR_CTCIF4);
+    }
     pdm_irq_unlock(primask);
 
     const uint32_t previous_common = pdm_dma_stats.consumed_a;
-    PdmRingRecovery recovery = pdm_ring_recover_pair(
-        pdm_dma_stats.produced_a, pdm_dma_stats.produced_b, previous_common,
-        PDM_DMA_BUF_SAMPLES, PDM_DMA_BUF_FREE_MARGIN);
+    PdmRingRecovery recovery = frozen
+        ? pdm_ring_recover_frozen_pair(
+            pdm_dma_stats.produced_a, pdm_dma_stats.produced_b,
+            previous_common, PDM_DMA_BUF_SAMPLES)
+        : pdm_ring_recover_pair(
+            pdm_dma_stats.produced_a, pdm_dma_stats.produced_b,
+            previous_common, PDM_DMA_BUF_SAMPLES, PDM_DMA_BUF_FREE_MARGIN);
 
     if (recovery.overrun) {
         if (pdm_ring_has_lapped(pdm_dma_stats.produced_a, previous_common,
@@ -374,10 +393,12 @@ uint32_t pdm_output_rate_hz(void)
 PdmCaptureStats pdm_capture_stats(void)
 {
     const uint32_t primask = pdm_irq_lock();
-    pdm_dma_stats.produced_a = pdm_dma_snapshot_produced(
-        PDM_DMA_CH, &pdm_dma_completed_a, DMA_ISR_TCIF5, DMA_IFCR_CTCIF5);
-    pdm_dma_stats.produced_b = pdm_dma_snapshot_produced(
-        PDM_DMA2_CH, &pdm_dma_completed_b, DMA_ISR_TCIF4, DMA_IFCR_CTCIF4);
+    if (!pdm_dma_frozen) {
+        pdm_dma_stats.produced_a = pdm_dma_snapshot_produced(
+            PDM_DMA_CH, &pdm_dma_completed_a, DMA_ISR_TCIF5, DMA_IFCR_CTCIF5);
+        pdm_dma_stats.produced_b = pdm_dma_snapshot_produced(
+            PDM_DMA2_CH, &pdm_dma_completed_b, DMA_ISR_TCIF4, DMA_IFCR_CTCIF4);
+    }
     PdmCaptureStats stats;
     stats.produced_a = pdm_dma_stats.produced_a;
     stats.produced_b = pdm_dma_stats.produced_b;

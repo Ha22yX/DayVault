@@ -261,6 +261,7 @@ static void record_test(int seconds)
     uint8_t chunk[64];
     size_t chunk_len = 0;
     while (millis() < end) {
+        dbg_iwdg_kick();
         int16_t s;
         while (pdm_try_read_sample(&s)) {
             chunk[chunk_len++] = (uint8_t)s;
@@ -300,6 +301,7 @@ static void sample_stats(void)
     pdm_start();
     uint32_t end = millis() + 3000;
     while (millis() < end) {
+        dbg_iwdg_kick();
         int16_t s;
         while (pdm_try_read_sample(&s)) {
             if (count == 0) prev = s;
@@ -817,6 +819,8 @@ static void opusstat_print(void)
     Serial.print(" level_gain="); Serial.print(stats.pipeline.leveler.applied_gain_q16);
     Serial.print(" limiter="); Serial.print(stats.pipeline.leveler.limiter_activations);
     Serial.print(" active="); Serial.print(recorder.active() ? 1 : 0);
+    Serial.print(" primary="); Serial.print(CompressedRecorder::result_name(stats.primary_result));
+    Serial.print(" cleanup="); Serial.print(CompressedRecorder::result_name(stats.cleanup_result));
     Serial.print(" err="); Serial.println(CompressedRecorder::result_name(stats.last_result));
 }
 
@@ -972,6 +976,7 @@ loop_restart:
                         }
                         Serial.println("LIST done");
                     } else                     if (strncmp(line, "DMAT", 4) == 0) {
+                        if (rec_active) rec_stop();
                         dbg_step_set(10);
                         pdm_init(&audio_rb);
                         dbg_step_set(20);
@@ -983,6 +988,7 @@ loop_restart:
                         int64_t ssum = 0, ssq = 0;
                         int32_t mn = 32767, mx = -32768;
                         while (millis() < e) {
+                            dbg_iwdg_kick();
                             int16_t tmp[256];
                             int n = pdm_dma_read(tmp, 256);
                             cnt += (uint32_t)n;
@@ -1010,12 +1016,14 @@ loop_restart:
                         pdm_stop();
                         dbg_step_set(0);
                     } else if (strncmp(line, "ITST", 4) == 0) {
+                        if (rec_active) rec_stop();
                         pdm_itst_start();
                         uint32_t e = millis() + 2000;
-                        while (millis() < e) { }
+                        while (millis() < e) { dbg_iwdg_kick(); }
                         Serial.print("ITST isr="); Serial.println(pdm_isr_count_now());
                         pdm_stop();
                     } else if (strncmp(line, "SAMP", 4) == 0) {
+                        if (rec_active) rec_stop();
                         sample_stats();
                     } else if (strncmp(line, "DOWNLOAD ", 9) == 0) {
                         download_file(line + 9);
@@ -1080,6 +1088,7 @@ loop_restart:
                     } else if (strncmp(line, "LTEST", 5) == 0) {
                         lfn_bringup_test();
                     } else if (strncmp(line, "CAPT", 4) == 0) {
+                        if (rec_active) rec_stop();
                         record_test(5);
                     } else if (strncmp(line, "SDSPEED", 7) == 0) {
                         if (rec_active) rec_stop();
@@ -1171,6 +1180,7 @@ loop_restart:
                         Serial.flush();
                         dfu_enter();
                     } else if (strncmp(line, "DSCAN", 5) == 0) {
+                        if (rec_active) rec_stop();
                         static int16_t scan_buf[4096];
                         pdm_init(&audio_rb);
                         __HAL_RCC_DMA1_CLK_ENABLE();
@@ -1201,7 +1211,7 @@ loop_restart:
                                         DFSDM1_Filter0->FLTCR1 |= DFSDM_FLTCR1_DFEN | DFSDM_FLTCR1_RSWSTART;
                                         DFSDM1_Filter1->FLTCR1 |= DFSDM_FLTCR1_DFEN | DFSDM_FLTCR1_RSWSTART;
                                         uint32_t t0 = millis();
-                                        while ((millis() - t0) < 12) { }
+                                        while ((millis() - t0) < 12) { dbg_iwdg_kick(); }
                                         uint32_t ndtr = dma->CNDTR;
                                         dma->CCR = 0;
                                         DFSDM1_Filter0->FLTCR1 &= ~DFSDM_FLTCR1_DFEN;
@@ -1219,6 +1229,7 @@ loop_restart:
                         }
                         Serial.println("DSCAN done");
                     } else if (strncmp(line, "NF", 2) == 0) {
+                        if (rec_active) rec_stop();
                         pdm_init(&audio_rb);
                         DFSDM1_Channel1->CHCFGR1 = (DFSDM1_Channel1->CHCFGR1 & ~DFSDM_CHCFGR1_DATMPX) | (1u << DFSDM_CHCFGR1_DATMPX_Pos);
                         DFSDM1_Channel1->CHDATINR = 0xAAAAu;
@@ -1228,6 +1239,7 @@ loop_restart:
                         uint32_t cnt = 0;
                         uint32_t e = millis() + 1000;
                         while (millis() < e) {
+                            dbg_iwdg_kick();
                             int n = pdm_dma_read(buf, 2048);
                             for (int i = 0; i < n; i++) ssq += (int64_t)buf[i] * buf[i];
                             cnt += (uint32_t)n;
@@ -1237,11 +1249,15 @@ loop_restart:
                         Serial.print(" rms="); Serial.println(rms);
                         pdm_stop();
                     } else if (strncmp(line, "DUAL", 4) == 0) {
+                        if (rec_active) rec_stop();
                         pdm_init(&audio_rb);
                         pdm_start();
                         uint32_t e = millis() + 1500;
                         int16_t tmp[256];
-                        while (millis() < e) { pdm_dma_read(tmp, 256); }
+                        while (millis() < e) {
+                            dbg_iwdg_kick();
+                            pdm_dma_read(tmp, 256);
+                        }
                         int32_t u1r, u2r, cr, nn;
                         pdm_dual_diag(&u1r, &u2r, &cr, &nn);
                         Serial.print("DUAL u1="); Serial.print(u1r);
@@ -1250,11 +1266,15 @@ loop_restart:
                         Serial.print(" n="); Serial.println(nn);
                         pdm_stop();
                     } else if (strncmp(line, "RAW", 3) == 0) {
+                        if (rec_active) rec_stop();
                         pdm_init(&audio_rb);
                         pdm_start();
                         uint32_t e = millis() + 1500;
                         int16_t tmp[256];
-                        while (millis() < e) { pdm_dma_read(tmp, 256); }
+                        while (millis() < e) {
+                            dbg_iwdg_kick();
+                            pdm_dma_read(tmp, 256);
+                        }
                         int32_t rr, zz, pp, nn;
                         pdm_raw_diag(&rr, &zz, &pp, &nn);
                         Serial.print("RAW rms="); Serial.print(rr);

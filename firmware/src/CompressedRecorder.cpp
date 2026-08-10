@@ -8,6 +8,7 @@
 #include "Config.h"
 #include "DeviceTime.h"
 #include "Fs.h"
+#include "RecordingName.h"
 #include "TransferBuffer.h"
 
 namespace {
@@ -15,20 +16,6 @@ namespace {
 size_t align_up_8(size_t value)
 {
     return (value + 7u) & ~(size_t)7u;
-}
-
-void duration_suffix(char* output, size_t length, uint32_t seconds)
-{
-    const uint32_t hours = seconds / 3600u;
-    const uint32_t minutes = (seconds / 60u) % 60u;
-    const uint32_t remaining = seconds % 60u;
-    if (hours > 0u) {
-        snprintf(output, length, "_%luh%02lum%02lus", (unsigned long)hours,
-                 (unsigned long)minutes, (unsigned long)remaining);
-    } else {
-        snprintf(output, length, "_%lum%02lus", (unsigned long)minutes,
-                 (unsigned long)remaining);
-    }
 }
 
 }  // namespace
@@ -41,7 +28,9 @@ CompressedRecorder::CompressedRecorder()
       input_a_(),
       input_b_(),
       packet_(),
+      zero_frame_(),
       name_(),
+      timestamp_stem_(),
       sequence_(1u),
       synced_page_count_(0u),
       file_open_(false),
@@ -49,13 +38,18 @@ CompressedRecorder::CompressedRecorder()
       pdm_initialized_(false),
       pdm_started_(false),
       pipeline_started_(false),
+      has_encoded_frame_(false),
+      last_valid_samples_(0u),
       timestamp_name_(false),
+      cleanup_pending_(false),
       active_(false),
       callback_result_(COMPRESSED_RECORDER_OK),
       stats_()
 {
     stats_.bitrate = kOpusBitrate;
     stats_.sample_rate = kOpusSampleRate;
+    stats_.primary_result = COMPRESSED_RECORDER_OK;
+    stats_.cleanup_result = COMPRESSED_RECORDER_OK;
     stats_.last_result = COMPRESSED_RECORDER_OK;
 }
 
@@ -64,10 +58,27 @@ CompressedRecorderResult CompressedRecorder::start(RingBuf* pdm_sink,
 {
     if (active_) return COMPRESSED_RECORDER_ERR_BUSY;
 
+    if (cleanup_pending_) {
+        const CompressedRecorderResult cleanup = cleanup_partial_file();
+        stats_.cleanup_result = cleanup;
+        if (cleanup != COMPRESSED_RECORDER_OK) {
+            set_result(cleanup);
+            return cleanup;
+        }
+    }
+    if (file_open_) {
+        if (f_close(&file_) != FR_OK) {
+            set_result(COMPRESSED_RECORDER_ERR_CLOSE);
+            return COMPRESSED_RECORDER_ERR_CLOSE;
+        }
+        file_open_ = false;
+    }
+
     memset(&stats_, 0, sizeof(stats_));
     stats_.bitrate = kOpusBitrate;
     stats_.sample_rate = kOpusSampleRate;
     name_[0] = '\0';
+    timestamp_stem_[0] = '\0';
     sequence_ = 1u;
     synced_page_count_ = 0u;
     file_open_ = false;
@@ -75,7 +86,10 @@ CompressedRecorderResult CompressedRecorder::start(RingBuf* pdm_sink,
     pdm_initialized_ = false;
     pdm_started_ = false;
     pipeline_started_ = false;
+    has_encoded_frame_ = false;
+    last_valid_samples_ = 0u;
     timestamp_name_ = false;
+    cleanup_pending_ = false;
     callback_result_ = COMPRESSED_RECORDER_OK;
 
     if (pdm_sink == nullptr) return fail_start(COMPRESSED_RECORDER_ERR_PIPELINE);
@@ -181,7 +195,7 @@ CompressedRecorderResult CompressedRecorder::stop()
     CompressedRecorderResult result = stats_.last_result;
 
     if (pdm_started_) {
-        pdm_stop();
+        pdm_stop_and_freeze();
         pdm_started_ = false;
     }
     if (result == COMPRESSED_RECORDER_OK) {
@@ -204,6 +218,10 @@ CompressedRecorderResult CompressedRecorder::stop()
         }
         pipeline_started_ = false;
     }
+    if (result == COMPRESSED_RECORDER_OK && !drain_encoder_lookahead()) {
+        result = callback_result_ == COMPRESSED_RECORDER_OK
+            ? COMPRESSED_RECORDER_ERR_ENCODE : callback_result_;
+    }
     if (result == COMPRESSED_RECORDER_OK && !ogg_.finish()) {
         result = callback_result_ == COMPRESSED_RECORDER_OK
             ? COMPRESSED_RECORDER_ERR_OGG : callback_result_;
@@ -220,8 +238,9 @@ CompressedRecorderResult CompressedRecorder::stop()
     refresh_stats();
     if (file_open_) {
         const FRESULT close_result = f_close(&file_);
-        file_open_ = false;
-        if (close_result != FR_OK && result == COMPRESSED_RECORDER_OK) {
+        if (close_result == FR_OK) {
+            file_open_ = false;
+        } else if (result == COMPRESSED_RECORDER_OK) {
             result = COMPRESSED_RECORDER_ERR_CLOSE;
         }
     }
@@ -277,6 +296,9 @@ const char* CompressedRecorder::result_name(CompressedRecorderResult result)
     case COMPRESSED_RECORDER_ERR_SYNC: return "sync";
     case COMPRESSED_RECORDER_ERR_CLOSE: return "close";
     case COMPRESSED_RECORDER_ERR_RENAME: return "rename";
+    case COMPRESSED_RECORDER_ERR_CLEANUP_CLOSE: return "cleanup-close";
+    case COMPRESSED_RECORDER_ERR_CLEANUP_UNLINK: return "cleanup-unlink";
+    case COMPRESSED_RECORDER_ERR_CLEANUP_CLOSE_UNLINK: return "cleanup-close-unlink";
     }
     return "unknown";
 }
@@ -296,15 +318,11 @@ bool CompressedRecorder::open_recording()
 {
     timestamp_name_ = false;
     if (dt_time_is_set()) {
-        char stem[16];
-        dt_format_stem(stem, sizeof(stem));
-        for (uint8_t collision = 0u; collision < 10u; ++collision) {
-            if (collision == 0u) {
-                snprintf(name_, sizeof(name_), "0:/REC-%s.%s", stem, REC_EXT_STR);
-            } else {
-                snprintf(name_, sizeof(name_), "0:/REC-%s_%u.%s", stem,
-                         (unsigned)collision, REC_EXT_STR);
-            }
+        dt_format_stem(timestamp_stem_, sizeof(timestamp_stem_));
+        for (uint16_t collision = 0u; collision < 100u; ++collision) {
+            if (!recording_format_timestamp_path(
+                    name_, sizeof(name_), timestamp_stem_, collision, false, 0u,
+                    REC_EXT_STR)) return false;
             const FRESULT open_result = f_open(&file_, name_, FA_CREATE_NEW | FA_WRITE);
             if (open_result == FR_OK) {
                 file_open_ = true;
@@ -356,6 +374,18 @@ bool CompressedRecorder::encode_frame(const int16_t* pcm, uint16_t valid_samples
         }
         return false;
     }
+    has_encoded_frame_ = true;
+    last_valid_samples_ = valid_samples;
+    return true;
+}
+
+bool CompressedRecorder::drain_encoder_lookahead()
+{
+    const OpusFinalizationPlan plan = opus_finalization_plan(
+        encoder_.lookahead_samples_16k(), has_encoded_frame_, last_valid_samples_);
+    for (uint16_t frame = 0u; frame < plan.additional_zero_frames; ++frame) {
+        if (!encode_frame(zero_frame_, 0u)) return false;
+    }
     return true;
 }
 
@@ -371,15 +401,42 @@ CompressedRecorderResult CompressedRecorder::fail_start(CompressedRecorderResult
     }
     refresh_stats();
     encoder_.end();
-    if (file_open_) {
-        f_close(&file_);
-        file_open_ = false;
-    }
-    if (file_created_ && name_[0] != '\0') f_unlink(name_);
-    file_created_ = false;
     active_ = false;
-    set_result(result);
-    return result;
+    stats_.primary_result = result;
+    cleanup_pending_ = file_open_ || file_created_;
+    const CompressedRecorderResult cleanup = cleanup_partial_file();
+    stats_.cleanup_result = cleanup;
+    const CompressedRecorderResult reported = cleanup == COMPRESSED_RECORDER_OK
+        ? result : cleanup;
+    set_result(reported);
+    return reported;
+}
+
+CompressedRecorderResult CompressedRecorder::cleanup_partial_file()
+{
+    bool close_failed = false;
+    bool unlink_failed = false;
+    if (file_open_) {
+        if (f_close(&file_) == FR_OK) {
+            file_open_ = false;
+        } else {
+            close_failed = true;
+        }
+    }
+    if (file_created_ && name_[0] != '\0') {
+        if (f_unlink(name_) == FR_OK) {
+            file_created_ = false;
+        } else {
+            unlink_failed = true;
+        }
+    }
+    cleanup_pending_ = file_open_ || file_created_;
+    if (close_failed && unlink_failed) {
+        return COMPRESSED_RECORDER_ERR_CLEANUP_CLOSE_UNLINK;
+    }
+    if (close_failed) return COMPRESSED_RECORDER_ERR_CLEANUP_CLOSE;
+    if (unlink_failed) return COMPRESSED_RECORDER_ERR_CLEANUP_UNLINK;
+    return COMPRESSED_RECORDER_OK;
 }
 
 void CompressedRecorder::set_result(CompressedRecorderResult result)
@@ -399,15 +456,19 @@ void CompressedRecorder::refresh_stats()
 bool CompressedRecorder::rename_with_duration()
 {
     const uint32_t seconds = (uint32_t)(stats_.ogg.valid_input_samples / kOpusSampleRate);
-    char suffix[24];
     char renamed[sizeof(name_)];
-    duration_suffix(suffix, sizeof(suffix), seconds);
-    const char* const dot = strrchr(name_, '.');
-    if (dot == nullptr) return false;
-    snprintf(renamed, sizeof(renamed), "%.*s%s.%s", (int)(dot - name_), name_,
-             suffix, REC_EXT_STR);
-    if (f_rename(name_, renamed) != FR_OK) return false;
-    strncpy(name_, renamed, sizeof(name_) - 1u);
-    name_[sizeof(name_) - 1u] = '\0';
-    return true;
+    FILINFO info;
+    for (uint16_t collision = 0u; collision < 100u; ++collision) {
+        if (!recording_format_timestamp_path(
+                renamed, sizeof(renamed), timestamp_stem_, collision, true, seconds,
+                REC_EXT_STR)) return false;
+        const FRESULT stat_result = f_stat(renamed, &info);
+        if (stat_result == FR_OK) continue;
+        if (stat_result != FR_NO_FILE) return false;
+        if (f_rename(name_, renamed) != FR_OK) return false;
+        strncpy(name_, renamed, sizeof(name_) - 1u);
+        name_[sizeof(name_) - 1u] = '\0';
+        return true;
+    }
+    return false;
 }

@@ -24,6 +24,7 @@ public:
     bool begin(void* workspace, size_t bytes);
     int encode(const int16_t pcm[kOpusFrameSamples],
                uint8_t packet[kOpusMaxPacketBytes]);
+    uint16_t lookahead_samples_16k() const;
     uint16_t pre_skip_48k() const;
     size_t workspace_used() const;
     DayVaultOpusStats stats() const;
@@ -36,6 +37,7 @@ private:
     bool fail_begin();
 
     OpusEncoder* encoder_;
+    uint16_t lookahead_samples_16k_;
     uint16_t pre_skip_48k_;
     size_t workspace_used_;
     DayVaultOpusStats stats_;

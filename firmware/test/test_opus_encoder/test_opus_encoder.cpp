@@ -8,6 +8,7 @@
 
 #include "DayVaultOpusEncoder.h"
 #include "OpusArena.h"
+#include "OpusFinalization.h"
 
 static_assert(kOpusSampleRate == 16000, "Opus input rate must be 16 kHz");
 static_assert(kOpusFrameSamples == 320, "Opus frames must be 20 ms");
@@ -176,6 +177,40 @@ void test_encoder_leaves_non_overlapping_sram2_page_region(void)
                               encoder.workspace_used() + kOggPageBytes);
 }
 
+void test_encoder_exposes_native_16k_lookahead(void)
+{
+    DayVaultOpusEncoder encoder;
+
+    TEST_ASSERT_TRUE(encoder.begin(g_workspace, sizeof(g_workspace)));
+    TEST_ASSERT_GREATER_THAN(0u, encoder.lookahead_samples_16k());
+    TEST_ASSERT_EQUAL_UINT16((uint16_t)(encoder.lookahead_samples_16k() * 3u),
+                             encoder.pre_skip_48k());
+}
+
+void test_finalization_plan_counts_partial_frame_zeros_before_lookahead(void)
+{
+    const OpusFinalizationPlan needs_one = opus_finalization_plan(104u, true, 300u);
+    TEST_ASSERT_EQUAL_UINT16(20u, needs_one.zeros_already_encoded);
+    TEST_ASSERT_EQUAL_UINT16(84u, needs_one.remaining_lookahead_samples);
+    TEST_ASSERT_EQUAL_UINT16(1u, needs_one.additional_zero_frames);
+
+    const OpusFinalizationPlan already_covered = opus_finalization_plan(104u, true, 200u);
+    TEST_ASSERT_EQUAL_UINT16(120u, already_covered.zeros_already_encoded);
+    TEST_ASSERT_EQUAL_UINT16(0u, already_covered.remaining_lookahead_samples);
+    TEST_ASSERT_EQUAL_UINT16(0u, already_covered.additional_zero_frames);
+}
+
+void test_finalization_plan_drains_boundary_frame_but_not_empty_input(void)
+{
+    const OpusFinalizationPlan boundary = opus_finalization_plan(104u, true, 320u);
+    TEST_ASSERT_EQUAL_UINT16(0u, boundary.zeros_already_encoded);
+    TEST_ASSERT_EQUAL_UINT16(104u, boundary.remaining_lookahead_samples);
+    TEST_ASSERT_EQUAL_UINT16(1u, boundary.additional_zero_frames);
+
+    const OpusFinalizationPlan empty = opus_finalization_plan(104u, false, 0u);
+    TEST_ASSERT_EQUAL_UINT16(0u, empty.additional_zero_frames);
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -188,5 +223,8 @@ int main(int argc, char** argv)
     RUN_TEST(test_encoder_rejects_bad_parameters_and_counts_errors);
     RUN_TEST(test_encoder_rejects_small_workspace_without_heap_fallback);
     RUN_TEST(test_encoder_leaves_non_overlapping_sram2_page_region);
+    RUN_TEST(test_encoder_exposes_native_16k_lookahead);
+    RUN_TEST(test_finalization_plan_counts_partial_frame_zeros_before_lookahead);
+    RUN_TEST(test_finalization_plan_drains_boundary_frame_but_not_empty_input);
     return UNITY_END();
 }

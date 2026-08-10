@@ -6,6 +6,7 @@
 #include "AudioPipeline.h"
 #include "DayVaultOpusEncoder.h"
 #include "OggOpusWriter.h"
+#include "OpusFinalization.h"
 #include "PdmCapture.h"
 #include "RingBuf.h"
 #include "ff.h"
@@ -30,6 +31,9 @@ enum CompressedRecorderResult {
     COMPRESSED_RECORDER_ERR_SYNC,
     COMPRESSED_RECORDER_ERR_CLOSE,
     COMPRESSED_RECORDER_ERR_RENAME,
+    COMPRESSED_RECORDER_ERR_CLEANUP_CLOSE,
+    COMPRESSED_RECORDER_ERR_CLEANUP_UNLINK,
+    COMPRESSED_RECORDER_ERR_CLEANUP_CLOSE_UNLINK,
 };
 
 struct CompressedRecorderStats {
@@ -38,6 +42,8 @@ struct CompressedRecorderStats {
     uint32_t max_encode_us;
     size_t workspace_used;
     uint32_t sync_count;
+    CompressedRecorderResult primary_result;
+    CompressedRecorderResult cleanup_result;
     CompressedRecorderResult last_result;
     DayVaultOpusStats encoder;
     OggOpusStats ogg;
@@ -71,7 +77,9 @@ private:
     bool open_recording();
     bool write_page(const uint8_t* bytes, size_t length);
     bool encode_frame(const int16_t* pcm, uint16_t valid_samples);
+    bool drain_encoder_lookahead();
     CompressedRecorderResult fail_start(CompressedRecorderResult result);
+    CompressedRecorderResult cleanup_partial_file();
     void set_result(CompressedRecorderResult result);
     void refresh_stats();
     bool rename_with_duration();
@@ -83,7 +91,9 @@ private:
     int16_t input_a_[128];
     int16_t input_b_[128];
     uint8_t packet_[kOpusMaxPacketBytes];
+    int16_t zero_frame_[kOpusFrameSamples];
     char name_[64];
+    char timestamp_stem_[16];
     uint32_t sequence_;
     uint64_t synced_page_count_;
     bool file_open_;
@@ -91,7 +101,10 @@ private:
     bool pdm_initialized_;
     bool pdm_started_;
     bool pipeline_started_;
+    bool has_encoded_frame_;
+    uint16_t last_valid_samples_;
     bool timestamp_name_;
+    bool cleanup_pending_;
     bool active_;
     CompressedRecorderResult callback_result_;
     CompressedRecorderStats stats_;

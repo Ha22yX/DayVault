@@ -45,7 +45,8 @@ OggOpusWriter::OggOpusWriter()
       stats_(),
       started_(false),
       finished_(false),
-      failed_(true)
+      failed_(true),
+      final_packets_started_(false)
 {
 }
 
@@ -64,6 +65,7 @@ bool OggOpusWriter::begin(OggOpusSink sink, uint8_t* page_buffer, size_t page_bu
     started_ = false;
     finished_ = false;
     failed_ = true;
+    final_packets_started_ = false;
     if (sink.write == nullptr || page_buffer == nullptr || page_buffer_size < kPageBufferSize) return false;
 
     sink_ = sink;
@@ -92,6 +94,11 @@ bool OggOpusWriter::add_packet(const uint8_t* packet, uint16_t packet_size, uint
 {
     if (!started_ || finished_ || failed_ || packet_size == 0u || packet_size > kMaxPacketSize ||
         packet == nullptr) return false;
+    const bool final_packet = valid_input_samples < kFrameSamples;
+    if (final_packets_started_ && !final_packet) return false;
+    if (final_packet && packet_count_ == kMaxPacketsPerPage - 1u &&
+        !flush_audio_page(false)) return false;
+    if (packet_count_ == kMaxPacketsPerPage) return false;
 
     page_buffer_[kHeaderSize + packet_count_] = (uint8_t)packet_size;
     memcpy(page_buffer_ + kReservedAudioPrefix + audio_payload_size_, packet, packet_size);
@@ -100,7 +107,9 @@ bool OggOpusWriter::add_packet(const uint8_t* packet, uint16_t packet_size, uint
     valid_input_samples_ += valid_input_samples;
     ++stats_.packet_count;
     stats_.valid_input_samples = valid_input_samples_;
-    if (packet_count_ == kMaxPacketsPerPage && !flush_audio_page(false)) return false;
+    if (final_packet) final_packets_started_ = true;
+    if (!final_packet && packet_count_ == kMaxPacketsPerPage &&
+        !flush_audio_page(false)) return false;
     return true;
 }
 

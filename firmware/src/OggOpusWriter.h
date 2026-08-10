@@ -29,6 +29,7 @@ private:
     static const size_t kPageBufferSize = 8192u;
     static const uint8_t kMaxPacketsPerPage = 50u;
     static const uint16_t kMaxPacketSize = 160u;
+    static const uint16_t kFrameSamples = 320u;
     static const size_t kHeaderSize = 27u;
     static const size_t kReservedAudioPrefix = kHeaderSize + kMaxPacketsPerPage;
 
@@ -49,4 +50,5 @@ private:
     bool started_;
     bool finished_;
     bool failed_;
+    bool final_packets_started_;
 };

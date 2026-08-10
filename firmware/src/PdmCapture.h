@@ -20,6 +20,7 @@ typedef struct {
 void     pdm_init(RingBuf* sink);
 void     pdm_start(void);
 void     pdm_stop(void);
+void     pdm_stop_and_freeze(void);
 int      pdm_try_read_sample(int16_t* out);
 uint32_t pdm_overruns(void);
 uint32_t pdm_sample_count(void);

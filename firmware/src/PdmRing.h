@@ -71,6 +71,13 @@ static inline PdmRingRecovery pdm_ring_recover_pair(uint32_t produced_a,
     return recovery;
 }
 
+static inline PdmRingRecovery pdm_ring_recover_frozen_pair(
+        uint32_t produced_a, uint32_t produced_b, uint32_t common_consumed,
+        uint32_t buffer_samples) {
+    return pdm_ring_recover_pair(produced_a, produced_b, common_consumed,
+                                 buffer_samples, 0u);
+}
+
 static inline uint32_t pdm_compat_read_chunk(uint32_t remaining) {
     return remaining > 128u ? 128u : remaining;
 }

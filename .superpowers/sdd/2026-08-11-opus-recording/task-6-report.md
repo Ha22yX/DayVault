@@ -171,3 +171,131 @@ Absent from the final ELF/source configuration:
 ## Commit
 
 Requested commit message: `feat(rec): save production audio directly as Opus`
+
+---
+
+## Independent Review Fix Round 1/5
+
+Date: 2026-08-11
+Review input: `.superpowers/sdd/2026-08-11-opus-recording/task-6-independent-review.md`
+
+All one Critical, five Important, and one Minor findings were addressed. This round did
+not access hardware, serial, microphones, USB devices, DFU, option bytes, or flashing.
+
+### RED Evidence
+
+1. Ogg final boundary: `pio test -e native -f test_ogg_opus` produced 2 expected
+   failures and 13 passes. The new 49-full-plus-short and 49-full-plus-zero tests observed
+   50 packets on the non-EOS page instead of the required 49.
+2. Encoder lookahead: `pio test -e native -f test_opus_encoder` failed to compile because
+   the new `OpusFinalization.h` contract and 16 kHz lookahead getter did not exist.
+3. Frozen PDM drain: `test_pdm_ring` failed to compile on the absent frozen-pair helper;
+   the source suite reported 1 failure and 13 passes because no atomic freeze API existed.
+4. Cleanup and rename: `test_recording_name` failed to compile on the absent bounded name
+   formatter; source contracts reported 2 failures and 14 passes for missing cleanup state
+   and final-destination collision probing.
+5. Diagnostics: source contracts reported 1 failure and 16 passes at the first unguarded
+   `DMAT` branch. The normal-close/OPUSSTAT extension subsequently reported 1 expected
+   failure and 16 passes before those details were corrected.
+
+### GREEN Evidence
+
+- Source contracts: 17 passed.
+- Focused native matrix: 82 passed across PDM rate/ring, Opus arena/real encoder, Ogg,
+  audio pipeline, fusion, noise reduction, leveler, and recording-name policy.
+- ARM build: `pio run -e dayvault -j 1` succeeded in 55.04 seconds.
+- `git diff --check` passed; Git emitted only the repository's line-ending policy warnings.
+
+### Fixes
+
+- Ogg keeps an ordinary full packet 50 immediate. A short or zero-valid packet that would
+  occupy slot 50 first flushes the prior 49 full packets, then remains with all following
+  padding packets on the EOS page. Tests validate CRC, page flags, sequence numbers,
+  packet counts, and exact nondecreasing granules. The corrected one-second case uses
+  `50 * 320` captured samples and granule `312 + 16000 * 3 = 48312`.
+- `DayVaultOpusEncoder` exposes the native 16 kHz lookahead and derives 48 kHz pre-skip as
+  exactly three times that value. A pure finalization planner subtracts zero padding already
+  present in a partial 320-sample frame, then requests enough additional all-zero frames to
+  cover the remaining delay. Recorder padding packets use `valid_samples = 0`, so EOS
+  granule remains the captured-input duration and cannot retreat behind a prior page.
+- `pdm_stop_and_freeze()` runs under the IRQ lock, stops both DFSDM writers, accounts
+  pending TC flags into exact paired producer snapshots, freezes those counters, and only
+  then disables DMA/IRQs and clears residual flags. Frozen paired reads use zero margin;
+  the pure ring test proves the final 64 samples withheld from a live writer are drainable.
+- Failed-start cleanup now records the primary failure separately from close/unlink cleanup
+  failure, clears each ownership flag only after its FatFs operation succeeds, and retries
+  pending cleanup before any later start resets state. OPUSSTAT exposes primary, cleanup,
+  and reported outcomes. Normal close failures also retain truthful open state.
+- Every PDM claimant (`DMAT`, `ITST`, `SAMP`, `CAPT`, `DSCAN`, `NF`, `DUAL`, `RAW`)
+  finalizes an active production recording before reconfiguration. All blocking diagnostic
+  acquisition and scan loops service IWDG, including CAPT and DSCAN. Intentional diagnostic
+  WAV capture remains unchanged apart from ownership and watchdog handling.
+- Timestamp recording keeps one stable RTC stem. Final rename searches with `f_stat` for a
+  free destination and places collision syntax before duration, for example
+  `REC-20260811-143025_2_1m02s.OPUS`, before calling `f_rename`.
+
+### Resource And Symbol Audit
+
+Fresh `arm-none-eabi-size -A` and linker-map results:
+
+| Resource | Used/reserved | Limit | Remaining |
+| --- | ---: | ---: | ---: |
+| Flash (PlatformIO) | 219,288 B | 262,144 B | 42,856 B |
+| SRAM1 `.data + .bss + .noinit` | 71,880 B | 131,072 B | 59,192 B |
+| SRAM1 including 1,536 B heap/stack linker reservation | 73,416 B | 131,072 B | 57,656 B |
+| SRAM2 `.ram2` transfer workspace | 32,768 B | 32,768 B | 0 B static |
+
+`g_transfer_workspace` remains at `0x10000000`, size `0x8000`. Required production
+symbols remain in the ELF: recorder start/poll/checkpoint/stop, encoder begin/encode/end,
+Ogg begin/add/finish, `opus_encode_native`, `silk_Encode`, and
+`silk_encode_frame_FIX`. Decoder creation, DNN/DRED/OSCE, and temporary linker-probe
+symbols are absent. The Opus archive has no malloc/calloc/realloc dependency and uses only
+the DayVault arena free hook; unrelated framework libc allocator symbols remain in the ELF.
+
+### Stack Audit
+
+The clean ARM build generated 358 `.su` files. Relevant entries include:
+
+- `loop`: 4,968 B static.
+- `rec_stop`: 248 B static.
+- `CompressedRecorder::stop`: 24 B static.
+- `CompressedRecorder::drain_encoder_lookahead`: 24 B static.
+- `opus_encode_native`: 880 B dynamic.
+- `silk_Encode`: 184 B dynamic.
+- `silk_encode_frame_FIX`: 10,752 B dynamic.
+- `silk_pitch_analysis_core`: 1,016 B dynamic.
+
+The observed deepest recording path sums to about 18.5 KiB. Rounding this upward to a
+19 KiB conservative runtime allowance leaves `57,656 - 19,456 = 38,200 B` SRAM1 stack
+headroom, exceeding the required 8 KiB by 30,008 B. Interrupt usage is not fully described
+by GCC `.su` files, but it is covered comfortably by this remaining margin.
+
+### Safety And Compatibility Scan
+
+- No firmware/config reference to `0x1FFF7800`, `FLASH_OPTR`, boot option bits, or option-
+  byte programming APIs was found.
+- Software DFU remains `0x1FFF0000u`; USB VID remains `0x0483` in board and descriptor
+  sources.
+- Production `CompressedRecorder` contains no `wav_build_header`, `f_lseek`, mono
+  `pdm_dma_read`, PCM file, or parallel WAV path.
+- Legacy `.WAV` circular deletion compatibility remains case-insensitive alongside the
+  configured `.OPUS` extension.
+- Transfer-workspace exclusion, low-battery finalization, USB attach/detach recording
+  behavior, and temporary-probe removal remain intact.
+
+### Self-Review And Concerns
+
+- Ogg boundary behavior was checked for full packet 50, short packet slot 50, zero-valid
+  padding slot 50, exact EOS flags, CRCs, sequences, and monotonic granules.
+- Lookahead planning covers exact-frame, partial-frame, already-sufficient partial padding,
+  and empty-input cases. Empty input does not invent an Opus audio packet.
+- PDM ordering was reviewed statically: DFSDM production is halted while IRQs are locked,
+  TC flags are accounted by the existing double-snapshot logic, and frozen counters are
+  stored before DMA disable/final clear. No hardware run was performed.
+- FatFs failure handling is source-contracted rather than native fault-injected because the
+  firmware currently has no fake FatFs harness. Close/unlink transitions and deterministic
+  retry paths were reviewed directly.
+- The upstream fixed-point Opus warnings and existing RWX load-segment warning remain; this
+  round introduced no new compiler or linker failures.
+- Real-time encode latency and physical stop-boundary capture still need a separately
+  authorized hardware validation pass. This round intentionally performed none.

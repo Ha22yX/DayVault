@@ -228,19 +228,80 @@ void test_fiftieth_packet_immediately_emits_one_second_page(void)
     OggPage pages[5];
 
     begin_writer(&writer, &captured, page_buffer);
-    for (uint8_t i = 0u; i < 50u; ++i) TEST_ASSERT_TRUE(writer.add_packet(packet, sizeof(packet), 160u));
+    for (uint8_t i = 0u; i < 50u; ++i) TEST_ASSERT_TRUE(writer.add_packet(packet, sizeof(packet), 320u));
     TEST_ASSERT_EQUAL_UINT32(3u, collect_pages(captured, pages, 5u));
     TEST_ASSERT_EQUAL_UINT8(0x00u, pages[2].bytes[5u]);
     TEST_ASSERT_EQUAL_UINT32(8077u, pages[2].length);
     TEST_ASSERT_EQUAL_UINT8(50u, pages[2].bytes[26u]);
-    TEST_ASSERT_EQUAL_UINT64(24312u, read_le64(pages[2].bytes + 6u));
+    TEST_ASSERT_EQUAL_UINT32(2u, read_le32(pages[2].bytes + 18u));
+    TEST_ASSERT_EQUAL_UINT64(48312u, read_le64(pages[2].bytes + 6u));
     for (uint8_t i = 0u; i < 50u; ++i) TEST_ASSERT_EQUAL_UINT8(160u, pages[2].bytes[27u + i]);
 
     TEST_ASSERT_TRUE(writer.finish());
     TEST_ASSERT_EQUAL_UINT32(4u, collect_pages(captured, pages, 5u));
     TEST_ASSERT_EQUAL_UINT8(0x04u, pages[3].bytes[5u]);
+    TEST_ASSERT_EQUAL_UINT32(3u, read_le32(pages[3].bytes + 18u));
     TEST_ASSERT_EQUAL_UINT8(0u, pages[3].bytes[26u]);
-    TEST_ASSERT_EQUAL_UINT64(24312u, read_le64(pages[3].bytes + 6u));
+    TEST_ASSERT_EQUAL_UINT64(48312u, read_le64(pages[3].bytes + 6u));
+    TEST_ASSERT_TRUE(all_page_crc_values_are_valid(captured.bytes, captured.length));
+}
+
+void test_short_packet_in_slot_fifty_stays_on_eos_page(void)
+{
+    uint8_t packet[4] = {0xF8, 0x01, 0x02, 0x03};
+    uint8_t page_buffer[8192];
+    CapturedOgg captured;
+    OggOpusWriter writer;
+    OggPage pages[5];
+
+    begin_writer(&writer, &captured, page_buffer);
+    for (uint8_t i = 0u; i < 49u; ++i) {
+        TEST_ASSERT_TRUE(writer.add_packet(packet, sizeof(packet), 320u));
+    }
+    TEST_ASSERT_EQUAL_UINT32(2u, collect_pages(captured, pages, 5u));
+    TEST_ASSERT_TRUE(writer.add_packet(packet, sizeof(packet), 123u));
+
+    TEST_ASSERT_EQUAL_UINT32(3u, collect_pages(captured, pages, 5u));
+    TEST_ASSERT_EQUAL_UINT8(0x00u, pages[2].bytes[5u]);
+    TEST_ASSERT_EQUAL_UINT32(2u, read_le32(pages[2].bytes + 18u));
+    TEST_ASSERT_EQUAL_UINT8(49u, pages[2].bytes[26u]);
+    TEST_ASSERT_EQUAL_UINT64(47352u, read_le64(pages[2].bytes + 6u));
+
+    TEST_ASSERT_TRUE(writer.finish());
+    TEST_ASSERT_EQUAL_UINT32(4u, collect_pages(captured, pages, 5u));
+    TEST_ASSERT_EQUAL_UINT8(0x04u, pages[3].bytes[5u]);
+    TEST_ASSERT_EQUAL_UINT32(3u, read_le32(pages[3].bytes + 18u));
+    TEST_ASSERT_EQUAL_UINT8(1u, pages[3].bytes[26u]);
+    TEST_ASSERT_EQUAL_UINT64(47721u, read_le64(pages[3].bytes + 6u));
+    TEST_ASSERT_GREATER_OR_EQUAL(read_le64(pages[2].bytes + 6u),
+                                 read_le64(pages[3].bytes + 6u));
+    TEST_ASSERT_TRUE(all_page_crc_values_are_valid(captured.bytes, captured.length));
+}
+
+void test_zero_valid_padding_packet_in_slot_fifty_stays_on_eos_page(void)
+{
+    const uint8_t packet[] = {0xF8};
+    uint8_t page_buffer[8192];
+    CapturedOgg captured;
+    OggOpusWriter writer;
+    OggPage pages[5];
+
+    begin_writer(&writer, &captured, page_buffer);
+    for (uint8_t i = 0u; i < 49u; ++i) {
+        TEST_ASSERT_TRUE(writer.add_packet(packet, sizeof(packet), 320u));
+    }
+    TEST_ASSERT_TRUE(writer.add_packet(packet, sizeof(packet), 0u));
+    TEST_ASSERT_EQUAL_UINT32(3u, collect_pages(captured, pages, 5u));
+    TEST_ASSERT_EQUAL_UINT8(49u, pages[2].bytes[26u]);
+    TEST_ASSERT_EQUAL_UINT8(0x00u, pages[2].bytes[5u]);
+
+    TEST_ASSERT_TRUE(writer.finish());
+    TEST_ASSERT_EQUAL_UINT32(4u, collect_pages(captured, pages, 5u));
+    TEST_ASSERT_EQUAL_UINT8(0x04u, pages[3].bytes[5u]);
+    TEST_ASSERT_EQUAL_UINT8(1u, pages[3].bytes[26u]);
+    TEST_ASSERT_EQUAL_UINT64(read_le64(pages[2].bytes + 6u),
+                             read_le64(pages[3].bytes + 6u));
+    TEST_ASSERT_TRUE(all_page_crc_values_are_valid(captured.bytes, captured.length));
 }
 
 void test_rejects_packet_larger_than_fixed_160_byte_limit(void)
@@ -374,6 +435,8 @@ int main(int argc, char** argv)
     RUN_TEST(test_begin_emits_opus_tags_page);
     RUN_TEST(test_audio_page_uses_packet_lacing_and_eos_granule);
     RUN_TEST(test_fiftieth_packet_immediately_emits_one_second_page);
+    RUN_TEST(test_short_packet_in_slot_fifty_stays_on_eos_page);
+    RUN_TEST(test_zero_valid_padding_packet_in_slot_fifty_stays_on_eos_page);
     RUN_TEST(test_rejects_packet_larger_than_fixed_160_byte_limit);
     RUN_TEST(test_rejects_zero_length_packet);
     RUN_TEST(test_rejects_nonempty_null_packet);

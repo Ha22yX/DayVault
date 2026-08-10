@@ -14,6 +14,7 @@ const size_t kMaximumWorkspaceBytes = 32u * 1024u;
 
 DayVaultOpusEncoder::DayVaultOpusEncoder()
     : encoder_(nullptr),
+      lookahead_samples_16k_(0u),
       pre_skip_48k_(0u),
       workspace_used_(0u),
       stats_{}
@@ -28,6 +29,7 @@ DayVaultOpusEncoder::~DayVaultOpusEncoder()
 bool DayVaultOpusEncoder::begin(void* workspace, size_t bytes)
 {
     end();
+    lookahead_samples_16k_ = 0u;
     pre_skip_48k_ = 0u;
     workspace_used_ = 0u;
     stats_ = DayVaultOpusStats{};
@@ -81,7 +83,8 @@ bool DayVaultOpusEncoder::begin(void* workspace, size_t bytes)
     }
     if (lookahead <= 0 || lookahead > UINT16_MAX / 3) return fail_begin();
 
-    pre_skip_48k_ = (uint16_t)(lookahead * 3);
+    lookahead_samples_16k_ = (uint16_t)lookahead;
+    pre_skip_48k_ = (uint16_t)(lookahead_samples_16k_ * 3u);
     workspace_used_ = opus_arena_used();
     if (workspace_used_ > bytes || workspace_used_ > kMaximumWorkspaceBytes) {
         return fail_begin();
@@ -114,6 +117,11 @@ int DayVaultOpusEncoder::encode(const int16_t pcm[kOpusFrameSamples],
     return length;
 }
 
+uint16_t DayVaultOpusEncoder::lookahead_samples_16k() const
+{
+    return lookahead_samples_16k_;
+}
+
 uint16_t DayVaultOpusEncoder::pre_skip_48k() const
 {
     return pre_skip_48k_;
@@ -140,6 +148,7 @@ bool DayVaultOpusEncoder::fail_begin()
     workspace_used_ = opus_arena_used();
     if (encoder_ != nullptr) opus_encoder_destroy(encoder_);
     encoder_ = nullptr;
+    lookahead_samples_16k_ = 0u;
     pre_skip_48k_ = 0u;
     ++stats_.error_count;
     return false;
