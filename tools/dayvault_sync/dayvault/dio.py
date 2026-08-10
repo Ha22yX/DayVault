@@ -66,7 +66,7 @@ class DeviceConnection:
         raise TimeoutError(f"no response to '{cmd}'")
 
     def download_dl2(self, name: str, dest_path: str,
-                     progress_cb=None, ack_byte: bytes = b"G", idle_ms: int = 60,
+                     progress_cb=None, ack_byte: bytes = b"G", idle_ms: int = 5,
                      interrupt=None) -> int:
         """DL2 chunked-ACK download of <name> to <dest_path>. Returns bytes written.
 
@@ -133,10 +133,10 @@ class DeviceConnection:
                             progress_cb(total, size)
                 else:
                     no_data += 1
-                    if no_data >= max(1, int(idle_ms / 20)):
+                    if no_data >= max(1, int(idle_ms / 5)):   # ACK after ~idle_ms of no data
                         self._ser.write(ack_byte)
                         no_data = 0
-                    time.sleep(0.02)
+                    time.sleep(0.005)
         if total != size:
             raise IOError(f"incomplete download {name}: {total}/{size}")
         self._ser.write(ack_byte)

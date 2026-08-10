@@ -321,7 +321,7 @@ static void download_file(const char* fname)
 static void download_file2(const char* fname)
 {
     FIL f;
-    uint8_t buf[512];
+    uint8_t buf[4096];
     UINT rd = 0;
     char path[32];
 
