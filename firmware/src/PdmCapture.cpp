@@ -345,17 +345,17 @@ int pdm_itst_start(void)
 
 int pdm_isr_count_now(void) { return (int)isr_count; }
 
-void DFSDM1_FLT1_IRQHandler(void)
+extern "C" void DFSDM1_FLT1_IRQHandler(void)
 {
     isr_count++;
 }
 
-void DMA1_Channel5_IRQHandler(void)
+extern "C" void DMA1_Channel5_IRQHandler(void)
 {
     pdm_dma_account_pending_tc(&pdm_dma_completed_a, DMA_ISR_TCIF5, DMA_IFCR_CTCIF5);
 }
 
-void DMA1_Channel4_IRQHandler(void)
+extern "C" void DMA1_Channel4_IRQHandler(void)
 {
     pdm_dma_account_pending_tc(&pdm_dma_completed_b, DMA_ISR_TCIF4, DMA_IFCR_CTCIF4);
 }
