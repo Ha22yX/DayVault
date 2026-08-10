@@ -39,6 +39,9 @@
 #define AUDIO_CHANNELS    1u
 #define AUDIO_BITS        16u
 
+static_assert(AUDIO_SAMPLE_RATE == 16000u,
+              "Opus recording requires exact 16 kHz PCM");
+
 #define REC_DIR_STR "REC"
 #define REC_EXT_STR "WAV"
 #define REC_SEQ_MAX 999u
