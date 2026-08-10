@@ -12,7 +12,9 @@ const uint8_t kOpusHead[] = {
 
 const uint8_t kOpusTags[] = {
     'O', 'p', 'u', 's', 'T', 'a', 'g', 's',
-    0x00, 0x00, 0x00, 0x00,
+    0x16, 0x00, 0x00, 0x00,
+    'D', 'a', 'y', 'V', 'a', 'u', 'l', 't', ' ', 'l', 'i', 'b', 'o', 'p', 'u', 's',
+    ' ', '1', '.', '6', '.', '1',
     0x00, 0x00, 0x00, 0x00
 };
 
@@ -31,9 +33,37 @@ void write_le64(uint8_t* bytes, uint64_t value)
 
 }  // namespace
 
+OggOpusWriter::OggOpusWriter()
+    : sink_(),
+      page_buffer_(nullptr),
+      serial_(0u),
+      pre_skip_48k_(0u),
+      sequence_number_(0u),
+      valid_input_samples_(0u),
+      packet_count_(0u),
+      audio_payload_size_(0u),
+      stats_(),
+      started_(false),
+      finished_(false),
+      failed_(true)
+{
+}
+
 bool OggOpusWriter::begin(OggOpusSink sink, uint8_t* page_buffer, size_t page_buffer_size,
                           uint32_t serial, uint16_t pre_skip_48k)
 {
+    sink_ = {};
+    page_buffer_ = nullptr;
+    serial_ = 0u;
+    pre_skip_48k_ = 0u;
+    sequence_number_ = 0u;
+    valid_input_samples_ = 0u;
+    packet_count_ = 0u;
+    audio_payload_size_ = 0u;
+    stats_ = {};
+    started_ = false;
+    finished_ = false;
+    failed_ = true;
     if (sink.write == nullptr || page_buffer == nullptr || page_buffer_size < kPageBufferSize) return false;
 
     sink_ = sink;
@@ -41,38 +71,31 @@ bool OggOpusWriter::begin(OggOpusSink sink, uint8_t* page_buffer, size_t page_bu
     serial_ = serial;
     pre_skip_48k_ = pre_skip_48k;
     sequence_number_ = 0u;
-    valid_input_samples_ = 0u;
-    packet_count_ = 0u;
-    audio_payload_size_ = 0u;
-    stats_ = {};
     started_ = true;
-    finished_ = false;
     failed_ = false;
 
-    uint8_t head[kHeaderSize + 1u];
-    head[0] = sizeof(kOpusHead);
     uint8_t opus_head[sizeof(kOpusHead)];
     memcpy(opus_head, kOpusHead, sizeof(opus_head));
     opus_head[10] = (uint8_t)pre_skip_48k_;
     opus_head[11] = (uint8_t)(pre_skip_48k_ >> 8);
-    if (!emit_page(0x02u, 0u, head, 1u, opus_head, sizeof(opus_head))) return false;
+    page_buffer_[kHeaderSize] = sizeof(kOpusHead);
+    memcpy(page_buffer_ + kHeaderSize + 1u, opus_head, sizeof(opus_head));
+    if (!emit_page(0x02u, 0u, 1u, sizeof(opus_head))) return false;
 
-    uint8_t tags[kHeaderSize + 1u];
-    tags[0] = sizeof(kOpusTags);
-    if (!emit_page(0x00u, 0u, tags, 1u, kOpusTags, sizeof(kOpusTags))) return false;
+    page_buffer_[kHeaderSize] = sizeof(kOpusTags);
+    memcpy(page_buffer_ + kHeaderSize + 1u, kOpusTags, sizeof(kOpusTags));
+    if (!emit_page(0x00u, 0u, 1u, sizeof(kOpusTags))) return false;
     return true;
 }
 
 bool OggOpusWriter::add_packet(const uint8_t* packet, uint16_t packet_size, uint16_t valid_input_samples)
 {
-    if (!started_ || finished_ || failed_ || packet_size > kMaxPacketSize ||
-        (packet == nullptr && packet_size != 0u)) return false;
+    if (!started_ || finished_ || failed_ || packet_size == 0u || packet_size > kMaxPacketSize ||
+        packet == nullptr) return false;
     if (packet_count_ == kMaxPacketsPerPage && !flush_audio_page(false)) return false;
 
     page_buffer_[kHeaderSize + packet_count_] = (uint8_t)packet_size;
-    if (packet_size != 0u) {
-        memcpy(page_buffer_ + kReservedAudioPrefix + audio_payload_size_, packet, packet_size);
-    }
+    memcpy(page_buffer_ + kReservedAudioPrefix + audio_payload_size_, packet, packet_size);
     audio_payload_size_ += packet_size;
     ++packet_count_;
     valid_input_samples_ += valid_input_samples;
@@ -85,7 +108,7 @@ bool OggOpusWriter::finish()
 {
     if (!started_ || finished_ || failed_) return false;
     const bool wrote = packet_count_ == 0u
-        ? emit_page(0x04u, pre_skip_48k_, nullptr, 0u, nullptr, 0u)
+        ? emit_page(0x04u, pre_skip_48k_, 0u, 0u)
         : flush_audio_page(true);
     if (!wrote) return false;
     finished_ = true;
@@ -98,8 +121,7 @@ OggOpusStats OggOpusWriter::stats() const
 }
 
 bool OggOpusWriter::emit_page(uint8_t header_type, uint64_t granule_position,
-                              const uint8_t* laces, uint8_t lace_count,
-                              const uint8_t* payload, size_t payload_size)
+                              uint8_t lace_count, size_t payload_size)
 {
     const size_t page_size = kHeaderSize + lace_count + payload_size;
     if (page_size > kPageBufferSize) {
@@ -115,8 +137,6 @@ bool OggOpusWriter::emit_page(uint8_t header_type, uint64_t granule_position,
     write_le32(page_buffer_ + 14u, serial_);
     write_le32(page_buffer_ + 18u, sequence_number_);
     page_buffer_[26] = lace_count;
-    if (lace_count != 0u) memcpy(page_buffer_ + kHeaderSize, laces, lace_count);
-    if (payload_size != 0u) memcpy(page_buffer_ + kHeaderSize + lace_count, payload, payload_size);
 
     write_le32(page_buffer_ + 22u, 0u);
     write_le32(page_buffer_ + 22u, crc32(page_buffer_, page_size));
@@ -126,7 +146,7 @@ bool OggOpusWriter::emit_page(uint8_t header_type, uint64_t granule_position,
     }
     ++sequence_number_;
     ++stats_.page_count;
-    stats_.bytes_written += (uint32_t)page_size;
+    stats_.bytes_written += page_size;
     return true;
 }
 
@@ -135,8 +155,7 @@ bool OggOpusWriter::flush_audio_page(bool eos)
     const uint64_t granule_position = (uint64_t)pre_skip_48k_ + (uint64_t)valid_input_samples_ * 3u;
     memmove(page_buffer_ + kHeaderSize + packet_count_, page_buffer_ + kReservedAudioPrefix,
             audio_payload_size_);
-    if (!emit_page(eos ? 0x04u : 0x00u, granule_position, page_buffer_ + kHeaderSize,
-                   packet_count_, page_buffer_ + kHeaderSize + packet_count_, audio_payload_size_)) {
+    if (!emit_page(eos ? 0x04u : 0x00u, granule_position, packet_count_, audio_payload_size_)) {
         return false;
     }
     packet_count_ = 0u;

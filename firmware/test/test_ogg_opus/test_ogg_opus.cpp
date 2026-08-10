@@ -17,6 +17,16 @@ struct OggPage {
     size_t length;
 };
 
+struct FailingSink {
+    size_t calls;
+    size_t fail_on_call;
+};
+
+struct EosCapture {
+    uint8_t eos_header[27];
+    bool saw_eos;
+};
+
 uint32_t read_le32(const uint8_t* bytes)
 {
     return (uint32_t)bytes[0] |
@@ -94,6 +104,37 @@ OggOpusSink capture_sink(CapturedOgg* captured)
     return sink;
 }
 
+bool fail_on_write(void* context, const uint8_t* bytes, size_t length)
+{
+    (void)bytes;
+    (void)length;
+    FailingSink* sink = static_cast<FailingSink*>(context);
+    ++sink->calls;
+    return sink->calls != sink->fail_on_call;
+}
+
+OggOpusSink failing_sink(FailingSink* sink)
+{
+    OggOpusSink ogg_sink = {fail_on_write, sink};
+    return ogg_sink;
+}
+
+bool capture_eos_header(void* context, const uint8_t* bytes, size_t length)
+{
+    EosCapture* capture = static_cast<EosCapture*>(context);
+    if (length >= sizeof(capture->eos_header) && (bytes[5] & 0x04u) != 0u) {
+        memcpy(capture->eos_header, bytes, sizeof(capture->eos_header));
+        capture->saw_eos = true;
+    }
+    return true;
+}
+
+OggOpusSink eos_capture_sink(EosCapture* capture)
+{
+    OggOpusSink sink = {capture_eos_header, capture};
+    return sink;
+}
+
 void begin_writer(OggOpusWriter* writer, CapturedOgg* captured, uint8_t* page_buffer,
                   uint32_t serial = 0x12345678u, uint16_t pre_skip = 312u)
 {
@@ -116,11 +157,13 @@ void test_begin_emits_golden_opus_head_page_with_valid_crc(void)
     uint8_t page_buffer[8192];
     CapturedOgg captured;
     OggOpusWriter writer;
+    OggPage pages[2];
 
     begin_writer(&writer, &captured, page_buffer);
 
-    TEST_ASSERT_EQUAL_UINT32(sizeof(expected), captured.length - 44u);
-    TEST_ASSERT_EQUAL_MEMORY(expected, captured.bytes, sizeof(expected));
+    TEST_ASSERT_EQUAL_UINT32(2u, collect_pages(captured, pages, 2u));
+    TEST_ASSERT_EQUAL_UINT32(sizeof(expected), pages[0].length);
+    TEST_ASSERT_EQUAL_MEMORY(expected, pages[0].bytes, sizeof(expected));
     TEST_ASSERT_EQUAL_MEMORY("OggS", captured.bytes, 4u);
     TEST_ASSERT_EQUAL_UINT8(0x02u, captured.bytes[5]);
     TEST_ASSERT_EQUAL_MEMORY("OpusHead", captured.bytes + 28u, 8u);
@@ -142,10 +185,11 @@ void test_begin_emits_opus_tags_page(void)
     TEST_ASSERT_EQUAL_UINT8(0x00u, pages[1].bytes[5u]);
     TEST_ASSERT_EQUAL_UINT32(1u, read_le32(pages[1].bytes + 18u));
     TEST_ASSERT_EQUAL_UINT8(1u, pages[1].bytes[26u]);
-    TEST_ASSERT_EQUAL_UINT8(16u, pages[1].bytes[27u]);
+    TEST_ASSERT_EQUAL_UINT8(38u, pages[1].bytes[27u]);
     TEST_ASSERT_EQUAL_MEMORY("OpusTags", pages[1].bytes + 28u, 8u);
-    TEST_ASSERT_EQUAL_UINT32(0u, read_le32(pages[1].bytes + 36u));
-    TEST_ASSERT_EQUAL_UINT32(0u, read_le32(pages[1].bytes + 40u));
+    TEST_ASSERT_EQUAL_UINT32(22u, read_le32(pages[1].bytes + 36u));
+    TEST_ASSERT_EQUAL_MEMORY("DayVault libopus 1.6.1", pages[1].bytes + 40u, 22u);
+    TEST_ASSERT_EQUAL_UINT32(0u, read_le32(pages[1].bytes + 62u));
 }
 
 void test_audio_page_uses_packet_lacing_and_eos_granule(void)
@@ -213,6 +257,114 @@ void test_rejects_packet_larger_than_fixed_160_byte_limit(void)
     TEST_ASSERT_TRUE(writer.finish());
 }
 
+void test_rejects_zero_length_packet(void)
+{
+    uint8_t page_buffer[8192];
+    CapturedOgg captured;
+    OggOpusWriter writer;
+
+    begin_writer(&writer, &captured, page_buffer);
+
+    TEST_ASSERT_FALSE(writer.add_packet(nullptr, 0u, 160u));
+    TEST_ASSERT_TRUE(writer.finish());
+}
+
+void test_rejects_nonempty_null_packet(void)
+{
+    uint8_t page_buffer[8192];
+    CapturedOgg captured;
+    OggOpusWriter writer;
+
+    begin_writer(&writer, &captured, page_buffer);
+
+    TEST_ASSERT_FALSE(writer.add_packet(nullptr, 1u, 160u));
+    TEST_ASSERT_TRUE(writer.finish());
+}
+
+void test_rejects_add_and_finish_before_begin(void)
+{
+    const uint8_t packet[] = {0xF8};
+    OggOpusWriter writer;
+
+    TEST_ASSERT_FALSE(writer.add_packet(packet, sizeof(packet), 160u));
+    TEST_ASSERT_FALSE(writer.finish());
+}
+
+void test_failed_8191_byte_begin_latches_writer_closed(void)
+{
+    const uint8_t packet[] = {0xF8};
+    uint8_t page_buffer[8192];
+    CapturedOgg captured;
+    OggOpusWriter writer;
+
+    begin_writer(&writer, &captured, page_buffer);
+    TEST_ASSERT_FALSE(writer.begin(capture_sink(&captured), page_buffer, 8191u, 1u, 312u));
+    TEST_ASSERT_FALSE(writer.add_packet(packet, sizeof(packet), 160u));
+    TEST_ASSERT_FALSE(writer.finish());
+}
+
+void test_header_sink_failure_latches_writer_closed(void)
+{
+    const uint8_t packet[] = {0xF8};
+    uint8_t page_buffer[8192];
+    FailingSink sink = {0u, 1u};
+    OggOpusWriter writer;
+
+    TEST_ASSERT_FALSE(writer.begin(failing_sink(&sink), page_buffer, sizeof(page_buffer), 1u, 312u));
+    TEST_ASSERT_EQUAL_UINT32(1u, sink.calls);
+    TEST_ASSERT_FALSE(writer.add_packet(packet, sizeof(packet), 160u));
+    TEST_ASSERT_FALSE(writer.finish());
+}
+
+void test_rollover_sink_failure_latches_writer_closed(void)
+{
+    const uint8_t packet[] = {0xF8};
+    uint8_t page_buffer[8192];
+    FailingSink sink = {0u, 3u};
+    OggOpusWriter writer;
+
+    TEST_ASSERT_TRUE(writer.begin(failing_sink(&sink), page_buffer, sizeof(page_buffer), 1u, 312u));
+    for (uint8_t i = 0u; i < 50u; ++i) TEST_ASSERT_TRUE(writer.add_packet(packet, sizeof(packet), 160u));
+    TEST_ASSERT_FALSE(writer.add_packet(packet, sizeof(packet), 160u));
+    TEST_ASSERT_EQUAL_UINT32(3u, sink.calls);
+    TEST_ASSERT_FALSE(writer.add_packet(packet, sizeof(packet), 160u));
+    TEST_ASSERT_FALSE(writer.finish());
+}
+
+void test_eos_sink_failure_latches_writer_closed(void)
+{
+    const uint8_t packet[] = {0xF8};
+    uint8_t page_buffer[8192];
+    FailingSink sink = {0u, 3u};
+    OggOpusWriter writer;
+
+    TEST_ASSERT_TRUE(writer.begin(failing_sink(&sink), page_buffer, sizeof(page_buffer), 1u, 312u));
+    TEST_ASSERT_TRUE(writer.add_packet(packet, sizeof(packet), 160u));
+    TEST_ASSERT_FALSE(writer.finish());
+    TEST_ASSERT_EQUAL_UINT32(3u, sink.calls);
+    TEST_ASSERT_FALSE(writer.add_packet(packet, sizeof(packet), 160u));
+    TEST_ASSERT_FALSE(writer.finish());
+}
+
+void test_valid_sample_count_and_eos_granule_remain_64_bit(void)
+{
+    const uint8_t packet[] = {0xF8};
+    uint8_t page_buffer[8192];
+    EosCapture capture = {};
+    OggOpusWriter writer;
+
+    TEST_ASSERT_TRUE(writer.begin(eos_capture_sink(&capture), page_buffer, sizeof(page_buffer), 1u, 312u));
+    for (uint32_t i = 0u; i < 65537u; ++i) {
+        TEST_ASSERT_TRUE(writer.add_packet(packet, sizeof(packet), UINT16_MAX));
+    }
+    TEST_ASSERT_TRUE(writer.add_packet(packet, sizeof(packet), 1u));
+    TEST_ASSERT_TRUE(writer.finish());
+
+    TEST_ASSERT_EQUAL_UINT64(UINT64_C(4294967296), writer.stats().valid_input_samples);
+    TEST_ASSERT_TRUE(capture.saw_eos);
+    TEST_ASSERT_EQUAL_UINT64(UINT64_C(12884902200), read_le64(capture.eos_header + 6u));
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -224,5 +376,13 @@ int main(int argc, char** argv)
     RUN_TEST(test_audio_page_uses_packet_lacing_and_eos_granule);
     RUN_TEST(test_fiftieth_packet_stays_pending_until_next_packet_or_finish);
     RUN_TEST(test_rejects_packet_larger_than_fixed_160_byte_limit);
+    RUN_TEST(test_rejects_zero_length_packet);
+    RUN_TEST(test_rejects_nonempty_null_packet);
+    RUN_TEST(test_rejects_add_and_finish_before_begin);
+    RUN_TEST(test_failed_8191_byte_begin_latches_writer_closed);
+    RUN_TEST(test_header_sink_failure_latches_writer_closed);
+    RUN_TEST(test_rollover_sink_failure_latches_writer_closed);
+    RUN_TEST(test_eos_sink_failure_latches_writer_closed);
+    RUN_TEST(test_valid_sample_count_and_eos_granule_remain_64_bit);
     return UNITY_END();
 }

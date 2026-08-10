@@ -9,14 +9,16 @@ struct OggOpusSink {
 };
 
 struct OggOpusStats {
-    uint32_t page_count;
-    uint32_t packet_count;
-    uint32_t valid_input_samples;
-    uint32_t bytes_written;
+    uint64_t page_count;
+    uint64_t packet_count;
+    uint64_t valid_input_samples;
+    uint64_t bytes_written;
 };
 
 class OggOpusWriter {
 public:
+    OggOpusWriter();
+
     bool begin(OggOpusSink sink, uint8_t* page_buffer, size_t page_buffer_size,
                uint32_t serial, uint16_t pre_skip_48k);
     bool add_packet(const uint8_t* packet, uint16_t packet_size, uint16_t valid_input_samples);
@@ -31,8 +33,7 @@ private:
     static const size_t kReservedAudioPrefix = kHeaderSize + kMaxPacketsPerPage;
 
     bool emit_page(uint8_t header_type, uint64_t granule_position,
-                   const uint8_t* laces, uint8_t lace_count,
-                   const uint8_t* payload, size_t payload_size);
+                   uint8_t lace_count, size_t payload_size);
     bool flush_audio_page(bool eos);
     uint32_t crc32(const uint8_t* bytes, size_t length) const;
 
@@ -41,7 +42,7 @@ private:
     uint32_t serial_;
     uint16_t pre_skip_48k_;
     uint32_t sequence_number_;
-    uint32_t valid_input_samples_;
+    uint64_t valid_input_samples_;
     uint8_t packet_count_;
     size_t audio_payload_size_;
     OggOpusStats stats_;
