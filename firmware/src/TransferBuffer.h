@@ -10,3 +10,5 @@ enum {
 
 uint8_t* transfer_buffer(size_t index);
 size_t transfer_buffer_size(void);
+uint8_t* transfer_workspace(void);
+size_t transfer_workspace_size(void);

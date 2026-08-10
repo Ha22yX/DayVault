@@ -1,0 +1,43 @@
+{
+  "name": "DayVaultOpus",
+  "version": "1.6.1",
+  "description": "Pinned fixed-point libopus encoder for DayVault.",
+  "build": {
+    "includeDir": "include",
+    "srcDir": ".",
+    "flags": [
+      "-DOPUS_BUILD",
+      "-DFIXED_POINT=1",
+      "-DDISABLE_FLOAT_API",
+      "-DDISABLE_DEBUG_FLOAT",
+      "-DVAR_ARRAYS",
+      "-DCUSTOM_SUPPORT",
+      "-DPACKAGE_VERSION=\\\"1.6.1\\\"",
+      "-Iinclude",
+      "-I.",
+      "-Icelt",
+      "-Isilk",
+      "-Isilk/fixed"
+    ],
+    "srcFilter": [
+      "+<src/>",
+      "+<celt/>",
+      "+<silk/>",
+      "-<tests/>",
+      "-<src/*demo.c>",
+      "-<celt/opus_custom_demo.c>",
+      "-<celt/tests/>",
+      "-<celt/x86/>",
+      "-<celt/arm/>",
+      "-<celt/mips/>",
+      "-<silk/tests/>",
+      "-<silk/x86/>",
+      "-<silk/arm/>",
+      "-<silk/mips/>",
+      "-<silk/float/>",
+      "-<silk/fixed/x86/>",
+      "-<silk/fixed/arm/>",
+      "-<dnn/>"
+    ]
+  }
+}
