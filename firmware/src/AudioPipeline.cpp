@@ -11,16 +11,54 @@ int16_t AudioPipeline::fused_[AudioPipeline::kDspBlockSamples];
 int16_t AudioPipeline::reduced_[AudioPipeline::kDspBlockSamples];
 int16_t AudioPipeline::leveled_[AudioPipeline::kDspBlockSamples];
 int16_t AudioPipeline::codec_frame_[AudioPipeline::kCodecFrameSamples];
+AudioPipeline* AudioPipeline::active_instance_ = 0;
+
+AudioPipeline::AudioPipeline()
+    : sink_(0),
+      sink_context_(0),
+      input_count_(0u),
+      delayed_valid_samples_(0u),
+      codec_frame_count_(0u),
+      delayed_speech_present_(false),
+      latency_suppressed_(false),
+      initialized_(false),
+      finished_(false),
+      stats_()
+{
+}
+
+AudioPipeline::~AudioPipeline()
+{
+    if (active_instance_ == this) active_instance_ = 0;
+}
 
 bool AudioPipeline::reset(uint32_t sample_rate, AudioFrameSink sink, void* sink_context)
 {
+    if (sink == 0 || (active_instance_ != 0 && active_instance_ != this)) {
+        if (active_instance_ == this) active_instance_ = 0;
+        sink_ = 0;
+        sink_context_ = 0;
+        input_count_ = 0u;
+        delayed_valid_samples_ = 0u;
+        codec_frame_count_ = 0u;
+        delayed_speech_present_ = false;
+        latency_suppressed_ = false;
+        initialized_ = false;
+        finished_ = false;
+        memset(&stats_, 0, sizeof(stats_));
+        stats_.failed = true;
+        return false;
+    }
+
+    active_instance_ = this;
     sink_ = sink;
     sink_context_ = sink_context;
     input_count_ = 0u;
     delayed_valid_samples_ = 0u;
     codec_frame_count_ = 0u;
+    delayed_speech_present_ = false;
     latency_suppressed_ = false;
-    initialized_ = sink != 0;
+    initialized_ = true;
     finished_ = false;
     memset(&stats_, 0, sizeof(stats_));
     memset(input_a_, 0, sizeof(input_a_));
@@ -30,8 +68,7 @@ bool AudioPipeline::reset(uint32_t sample_rate, AudioFrameSink sink, void* sink_
     noise_reduction_.reset(sample_rate);
     speech_leveler_.reset(sample_rate);
 
-    if (!initialized_) stats_.failed = true;
-    return initialized_;
+    return true;
 }
 
 bool AudioPipeline::push(const int16_t* a, const int16_t* b, uint32_t count)
@@ -67,6 +104,7 @@ bool AudioPipeline::finish()
     if (finished_) return true;
     if (stats_.captured_samples == 0u) {
         finished_ = true;
+        active_instance_ = 0;
         return true;
     }
 
@@ -93,6 +131,7 @@ bool AudioPipeline::finish()
     }
 
     finished_ = true;
+    active_instance_ = 0;
     return true;
 }
 
@@ -106,7 +145,7 @@ bool AudioPipeline::process_dsp_block(uint32_t valid_samples)
     fusion_.process(input_a_, input_b_, fused_, kDspBlockSamples);
     const AudioFusionStats fusion_stats = fusion_.stats();
     noise_reduction_.process(fused_, reduced_, kDspBlockSamples, fusion_stats.speech_present);
-    speech_leveler_.process(reduced_, leveled_, kDspBlockSamples, fusion_stats.speech_present);
+    speech_leveler_.process(reduced_, leveled_, kDspBlockSamples, delayed_speech_present_);
     stats_.dsp_blocks++;
 
     if (!latency_suppressed_) {
@@ -116,6 +155,7 @@ bool AudioPipeline::process_dsp_block(uint32_t valid_samples)
         return false;
     }
     delayed_valid_samples_ = valid_samples;
+    delayed_speech_present_ = fusion_stats.speech_present;
     return true;
 }
 

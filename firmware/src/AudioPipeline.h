@@ -19,6 +19,9 @@ typedef struct {
 
 class AudioPipeline {
 public:
+    AudioPipeline();
+    ~AudioPipeline();
+
     bool reset(uint32_t sample_rate, AudioFrameSink sink, void* sink_context);
     bool push(const int16_t* a, const int16_t* b, uint32_t count);
     bool finish();
@@ -41,12 +44,15 @@ private:
     static int16_t reduced_[kDspBlockSamples];
     static int16_t leveled_[kDspBlockSamples];
     static int16_t codec_frame_[kCodecFrameSamples];
+    // Shared fixed storage is reserved by one reset pipeline at a time.
+    static AudioPipeline* active_instance_;
 
     AudioFrameSink sink_;
     void* sink_context_;
     uint32_t input_count_;
     uint32_t delayed_valid_samples_;
     uint32_t codec_frame_count_;
+    bool delayed_speech_present_;
     bool latency_suppressed_;
     bool initialized_;
     bool finished_;
