@@ -23,6 +23,7 @@ def load_config() -> dict:
         "sync_folder": str(Path.home() / "Documents" / "DayVault"),
         "poll_interval_ms": 1500,
         "autostart": False,
+        "language": "en",
     }
     p = _cfg_path()
     if p.exists():
