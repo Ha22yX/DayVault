@@ -26,6 +26,8 @@ uint32_t pdm_sample_count(void);
 int      pdm_start_result(void);
 int      pdm_itst_start(void);
 int      pdm_isr_count_now(void);
+uint32_t pdm_clock_output_hz(void);
+uint32_t pdm_output_rate_hz(void);
 int      pdm_dma_read_dual(int16_t* channel_a, int16_t* channel_b, int max_samples);
 int      pdm_dma_read(int16_t* buf, int max);
 PdmCaptureStats pdm_capture_stats(void);

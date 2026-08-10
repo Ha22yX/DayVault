@@ -221,7 +221,7 @@ static void record_test(int seconds)
 {
     WavConfig cfg;
     cfg.format = 1;
-    cfg.sample_rate = AUDIO_SAMPLE_RATE;
+    cfg.sample_rate = pdm_output_rate_hz();
     cfg.channels = AUDIO_CHANNELS;
     cfg.bits = AUDIO_BITS;
     cfg.block_align = (uint16_t)(AUDIO_CHANNELS * (AUDIO_BITS / 8u));
@@ -726,7 +726,6 @@ static uint32_t rec_data_bytes = 0;
 #define REC_CIRC_INTERVAL_MS 30000u
 static uint32_t rec_circ_last_ms = 0;
 static uint32_t rec_seq = 1;
-static uint32_t rec_start_ms = 0;
 static uint32_t rec_last_sync_ms = 0;
 static uint32_t rec_discard = 0;
 static uint8_t rec_chunk[64];
@@ -793,7 +792,6 @@ static void rec_start(void)
     ringbuf_init(&audio_rb, audio_buf, sizeof(audio_buf));
     pdm_init(&audio_rb);
     pdm_start();
-    rec_start_ms = millis();
     rec_last_sync_ms = millis();
     rec_active = true;
     fs_make_space(CIRC_FREE_BYTES, rec_name + 3);   /* free room before a long recording */
@@ -814,14 +812,6 @@ static void rec_stop(void)
         if (rec_chunk_len == sizeof(rec_chunk)) rec_flush_chunk();
     }
     rec_flush_chunk();
-    uint32_t elapsed = millis() - rec_start_ms;
-    if (elapsed > 0 && rec_data_bytes > 0) {
-        uint32_t rate = (uint32_t)(((uint64_t)rec_data_bytes * 1000u) / (2u * (uint64_t)elapsed));
-        if (rate < 1000u) rate = 1000u;
-        if (rate > 48000u) rate = 48000u;
-        rec_cfg.sample_rate = rate;
-        rec_cfg.byte_rate = rate * rec_cfg.block_align;
-    }
     wav_build_header(hdr, &rec_cfg, rec_data_bytes);
     if (f_lseek(&rec_file, 0) == FR_OK) f_write(&rec_file, hdr, 44, &wr);
     f_sync(&rec_file);
@@ -924,7 +914,7 @@ void setup()
     exti_usb_wake_enable();
 
     rec_cfg.format = 1;
-    rec_cfg.sample_rate = AUDIO_SAMPLE_RATE;
+    rec_cfg.sample_rate = pdm_output_rate_hz();
     rec_cfg.channels = AUDIO_CHANNELS;
     rec_cfg.bits = AUDIO_BITS;
     rec_cfg.block_align = (uint16_t)(AUDIO_CHANNELS * (AUDIO_BITS / 8u));

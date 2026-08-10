@@ -1,5 +1,6 @@
 #pragma once
 #include "stm32l4xx_hal.h"
+#include "PdmRate.h"
 
 #define PIN_SD_CS       GPIO_PIN_4
 #define PIN_SD_CS_PORT  GPIOA
@@ -15,13 +16,26 @@
 #define PIN_PDM_DATA      GPIO_PIN_12
 #define PIN_PDM_DATA_PORT GPIOB
 
-#define PDM_CKOUT_DIVIDER 13u
+#define PDM_CKOUT_DIVIDER 52u
 #define PDM_OSR           96u
 #define PDM_GAIN          128u
 #define PDM_HALF_SAMPLES  512u
 #define PDM_RING_BYTES    (PDM_HALF_SAMPLES * 2u * 8u)   /* 8 KB ring */
 
-#define AUDIO_SAMPLE_RATE 16000u
+#if PDM_CKOUT_DIVIDER == 0u
+#error "PDM_CKOUT_DIVIDER must be non-zero"
+#endif
+
+#if PDM_OSR == 0u
+#error "PDM_OSR must be non-zero"
+#endif
+
+#if PDM_CLOCK_HZ(PDM_DFSDM_SOURCE_HZ, PDM_CKOUT_DIVIDER) < 1100000u || \
+    PDM_CLOCK_HZ(PDM_DFSDM_SOURCE_HZ, PDM_CKOUT_DIVIDER) > 4800000u
+#error "PDM clock must remain in the SPH0655 normal-mode range"
+#endif
+
+#define AUDIO_SAMPLE_RATE PDM_PCM_RATE_HZ(PDM_DFSDM_SOURCE_HZ, PDM_CKOUT_DIVIDER, PDM_OSR)
 #define AUDIO_CHANNELS    1u
 #define AUDIO_BITS        16u
 

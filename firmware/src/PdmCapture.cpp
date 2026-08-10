@@ -161,8 +161,8 @@ void pdm_init(RingBuf* s)
     HAL_DFSDM_ChannelInit(&hc0);
 
     hf.Instance = DFSDM1_Filter1;
-    hf.Init.RegularParam.Trigger = DFSDM_FILTER_SW_TRIGGER;
-    hf.Init.RegularParam.FastMode = DISABLE;
+    hf.Init.RegularParam.Trigger = DFSDM_FILTER_SYNC_TRIGGER;
+    hf.Init.RegularParam.FastMode = ENABLE;
     hf.Init.RegularParam.DmaMode = ENABLE;
     hf.Init.InjectedParam.Trigger = DFSDM_FILTER_SW_TRIGGER;
     hf.Init.InjectedParam.ScanMode = DISABLE;
@@ -177,7 +177,7 @@ void pdm_init(RingBuf* s)
 
     hf0.Instance = DFSDM1_Filter0;
     hf0.Init.RegularParam.Trigger = DFSDM_FILTER_SW_TRIGGER;
-    hf0.Init.RegularParam.FastMode = DISABLE;
+    hf0.Init.RegularParam.FastMode = ENABLE;
     hf0.Init.RegularParam.DmaMode = ENABLE;
     hf0.Init.InjectedParam.Trigger = DFSDM_FILTER_SW_TRIGGER;
     hf0.Init.InjectedParam.ScanMode = DISABLE;
@@ -361,6 +361,16 @@ extern "C" void DMA1_Channel4_IRQHandler(void)
 }
 
 uint32_t pdm_overruns(void) { return overruns; }
+uint32_t pdm_clock_output_hz(void)
+{
+    return pdm_clock_hz(PDM_DFSDM_SOURCE_HZ, PDM_CKOUT_DIVIDER);
+}
+
+uint32_t pdm_output_rate_hz(void)
+{
+    return pdm_pcm_rate_hz(PDM_DFSDM_SOURCE_HZ, PDM_CKOUT_DIVIDER, PDM_OSR);
+}
+
 PdmCaptureStats pdm_capture_stats(void)
 {
     const uint32_t primask = pdm_irq_lock();
