@@ -201,6 +201,9 @@ class DeviceMonitor(QObject):
         current = {serial: port for port, serial in ports}
         for serial in list(self._known):
             if serial not in current:
+                sync_thread = self._threads.get(serial)
+                if sync_thread is not None and sync_thread.isRunning():
+                    continue
                 del self._known[serial]
                 log.info("device removed: serial=%s", serial)
                 self.device_removed.emit(serial)
