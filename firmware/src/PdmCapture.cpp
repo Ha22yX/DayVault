@@ -1,5 +1,6 @@
 #include "PdmCapture.h"
 #include "Config.h"
+#include "PdmRing.h"
 #include "stm32l4xx_hal.h"
 #include <string.h>
 #include <math.h>
@@ -24,8 +25,41 @@ static int16_t pdm_dma_buf2[PDM_DMA_BUF_SAMPLES] __attribute__((aligned(4)));
 static volatile uint32_t pdm_dma_pos = 0;
 static volatile uint32_t pdm_dma_pos2 = 0;
 static volatile PdmCaptureStats pdm_dma_stats = {0};
-static uint32_t pdm_dma_prev_written_a = 0;
-static uint32_t pdm_dma_prev_written_b = 0;
+static volatile uint32_t pdm_dma_completed_a = 0;
+static volatile uint32_t pdm_dma_completed_b = 0;
+
+static uint32_t pdm_irq_lock(void)
+{
+    const uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    return primask;
+}
+
+static void pdm_irq_unlock(uint32_t primask)
+{
+    if ((primask & 1u) == 0u) __enable_irq();
+}
+
+static bool pdm_dma_account_pending_tc(volatile uint32_t* completed,
+                                       uint32_t tc_flag, uint32_t clear_flag)
+{
+    if ((DMA1->ISR & tc_flag) == 0u) return false;
+    DMA1->IFCR = clear_flag;
+    (*completed)++;
+    return true;
+}
+
+static uint32_t pdm_dma_snapshot_produced(volatile DMA_Channel_TypeDef* dma,
+                                          volatile uint32_t* completed,
+                                          uint32_t tc_flag, uint32_t clear_flag)
+{
+    pdm_dma_account_pending_tc(completed, tc_flag, clear_flag);
+    uint32_t ndtr = dma->CNDTR;
+    if (pdm_dma_account_pending_tc(completed, tc_flag, clear_flag)) {
+        ndtr = dma->CNDTR;
+    }
+    return pdm_ring_produced_from_tc(*completed, PDM_DMA_BUF_SAMPLES, ndtr);
+}
 
 extern volatile uint32_t g_dbg_step;
 void pdm_dbg_step(uint32_t v) { g_dbg_step = v; }
@@ -169,23 +203,34 @@ void pdm_init(RingBuf* s)
 
 void pdm_start(void)
 {
+    const uint32_t primask = pdm_irq_lock();
+    HAL_NVIC_DisableIRQ(DMA1_Channel4_IRQn);
+    HAL_NVIC_DisableIRQ(DMA1_Channel5_IRQn);
+
     overruns = 0;
     samples = 0;
     pdm_dma_pos = 0;
     pdm_dma_pos2 = 0;
     memset((void*)&pdm_dma_stats, 0, sizeof(pdm_dma_stats));
-    pdm_dma_prev_written_a = 0;
-    pdm_dma_prev_written_b = 0;
+    pdm_dma_completed_a = 0;
+    pdm_dma_completed_b = 0;
 
     DMA1_CSELR->CSELR &= ~(DMA_CSELR_C4S | DMA_CSELR_C5S);
     PDM_DMA_CH->CCR = 0;
     PDM_DMA_CH->CNDTR = PDM_DMA_BUF_SAMPLES;
-    PDM_DMA_CH->CCR = DMA_CCR_EN_Msk | DMA_CCR_CIRC_Msk | DMA_CCR_MINC_Msk
+    DMA1->IFCR = DMA_IFCR_CTCIF4 | DMA_IFCR_CTCIF5;
+    PDM_DMA_CH->CCR = DMA_CCR_EN_Msk | DMA_CCR_CIRC_Msk | DMA_CCR_MINC_Msk | DMA_CCR_TCIE
                     | DMA_CCR_PSIZE_0 | DMA_CCR_MSIZE_0 | DMA_CCR_PL_1;
     PDM_DMA2_CH->CCR = 0;
     PDM_DMA2_CH->CNDTR = PDM_DMA_BUF_SAMPLES;
-    PDM_DMA2_CH->CCR = DMA_CCR_EN_Msk | DMA_CCR_CIRC_Msk | DMA_CCR_MINC_Msk
+    PDM_DMA2_CH->CCR = DMA_CCR_EN_Msk | DMA_CCR_CIRC_Msk | DMA_CCR_MINC_Msk | DMA_CCR_TCIE
                      | DMA_CCR_PSIZE_0 | DMA_CCR_MSIZE_0 | DMA_CCR_PL_1;
+
+    HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 5, 0);
+    HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
+    HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);
+    pdm_irq_unlock(primask);
 
     hf.Instance->FLTICR = DFSDM_FLTICR_CLRROVRF | DFSDM_FLTICR_CLRJOVRF;
     hf0.Instance->FLTICR = DFSDM_FLTICR_CLRROVRF | DFSDM_FLTICR_CLRJOVRF;
@@ -197,21 +242,13 @@ void pdm_stop(void)
 {
     HAL_DFSDM_FilterRegularStop(&hf);
     HAL_DFSDM_FilterRegularStop(&hf0);
+    const uint32_t primask = pdm_irq_lock();
     PDM_DMA_CH->CCR &= ~DMA_CCR_EN_Msk;
     PDM_DMA2_CH->CCR &= ~DMA_CCR_EN_Msk;
-}
-
-static uint32_t pdm_dma_update_produced(volatile DMA_Channel_TypeDef* dma,
-                                        uint32_t* previous_written,
-                                        volatile uint32_t* produced)
-{
-    const uint32_t written = (PDM_DMA_BUF_SAMPLES - dma->CNDTR) &
-                             (PDM_DMA_BUF_SAMPLES - 1u);
-    const uint32_t delta = (written + PDM_DMA_BUF_SAMPLES - *previous_written) &
-                           (PDM_DMA_BUF_SAMPLES - 1u);
-    *previous_written = written;
-    *produced += delta;
-    return written;
+    HAL_NVIC_DisableIRQ(DMA1_Channel4_IRQn);
+    HAL_NVIC_DisableIRQ(DMA1_Channel5_IRQn);
+    DMA1->IFCR = DMA_IFCR_CTCIF4 | DMA_IFCR_CTCIF5;
+    pdm_irq_unlock(primask);
 }
 
 static int16_t pdm_scale_raw(int16_t sample)
@@ -226,39 +263,33 @@ int pdm_dma_read_dual(int16_t* channel_a, int16_t* channel_b, int max_samples)
 {
     if (channel_a == NULL || channel_b == NULL || max_samples <= 0) return 0;
 
-    const uint32_t written_a = pdm_dma_update_produced(
-        PDM_DMA_CH, &pdm_dma_prev_written_a, &pdm_dma_stats.produced_a);
-    const uint32_t written_b = pdm_dma_update_produced(
-        PDM_DMA2_CH, &pdm_dma_prev_written_b, &pdm_dma_stats.produced_b);
-    uint32_t available_a = pdm_dma_stats.produced_a - pdm_dma_stats.consumed_a;
-    uint32_t available_b = pdm_dma_stats.produced_b - pdm_dma_stats.consumed_b;
+    const uint32_t primask = pdm_irq_lock();
+    pdm_dma_stats.produced_a = pdm_dma_snapshot_produced(
+        PDM_DMA_CH, &pdm_dma_completed_a, DMA_ISR_TCIF5, DMA_IFCR_CTCIF5);
+    pdm_dma_stats.produced_b = pdm_dma_snapshot_produced(
+        PDM_DMA2_CH, &pdm_dma_completed_b, DMA_ISR_TCIF4, DMA_IFCR_CTCIF4);
+    pdm_irq_unlock(primask);
 
-    if (available_a > PDM_DMA_BUF_SAMPLES || available_b > PDM_DMA_BUF_SAMPLES) {
-        if (available_a > PDM_DMA_BUF_SAMPLES) pdm_dma_stats.overruns_a++;
-        if (available_b > PDM_DMA_BUF_SAMPLES) pdm_dma_stats.overruns_b++;
+    const uint32_t previous_common = pdm_dma_stats.consumed_a;
+    PdmRingRecovery recovery = pdm_ring_recover_pair(
+        pdm_dma_stats.produced_a, pdm_dma_stats.produced_b, previous_common,
+        PDM_DMA_BUF_SAMPLES, PDM_DMA_BUF_FREE_MARGIN);
+
+    if (recovery.overrun) {
+        if (pdm_ring_has_lapped(pdm_dma_stats.produced_a, previous_common,
+                                PDM_DMA_BUF_SAMPLES)) pdm_dma_stats.overruns_a++;
+        if (pdm_ring_has_lapped(pdm_dma_stats.produced_b, previous_common,
+                                PDM_DMA_BUF_SAMPLES)) pdm_dma_stats.overruns_b++;
         pdm_dma_stats.paired_overruns++;
         overruns++;
-
-        pdm_dma_pos = (written_a + PDM_DMA_BUF_SAMPLES - PDM_DMA_BUF_FREE_MARGIN) &
-                      (PDM_DMA_BUF_SAMPLES - 1u);
-        pdm_dma_pos2 = (written_b + PDM_DMA_BUF_SAMPLES - PDM_DMA_BUF_FREE_MARGIN) &
-                       (PDM_DMA_BUF_SAMPLES - 1u);
-        pdm_dma_stats.consumed_a = pdm_dma_stats.produced_a -
-                                    (PDM_DMA_BUF_SAMPLES - PDM_DMA_BUF_FREE_MARGIN);
-        pdm_dma_stats.consumed_b = pdm_dma_stats.produced_b -
-                                    (PDM_DMA_BUF_SAMPLES - PDM_DMA_BUF_FREE_MARGIN);
-        available_a = PDM_DMA_BUF_SAMPLES - PDM_DMA_BUF_FREE_MARGIN;
-        available_b = PDM_DMA_BUF_SAMPLES - PDM_DMA_BUF_FREE_MARGIN;
     }
 
-    if (available_a > PDM_DMA_BUF_SAMPLES - PDM_DMA_BUF_FREE_MARGIN) {
-        available_a = PDM_DMA_BUF_SAMPLES - PDM_DMA_BUF_FREE_MARGIN;
-    }
-    if (available_b > PDM_DMA_BUF_SAMPLES - PDM_DMA_BUF_FREE_MARGIN) {
-        available_b = PDM_DMA_BUF_SAMPLES - PDM_DMA_BUF_FREE_MARGIN;
-    }
+    pdm_dma_stats.consumed_a = recovery.common_consumed;
+    pdm_dma_stats.consumed_b = recovery.common_consumed;
+    pdm_dma_pos = pdm_ring_index(recovery.common_consumed, PDM_DMA_BUF_SAMPLES);
+    pdm_dma_pos2 = pdm_dma_pos;
 
-    uint32_t take = available_a < available_b ? available_a : available_b;
+    uint32_t take = recovery.available;
     if (take > (uint32_t)max_samples) take = (uint32_t)max_samples;
     for (uint32_t i = 0; i < take; i++) {
         channel_a[i] = pdm_scale_raw(pdm_dma_buf[(pdm_dma_pos + i) &
@@ -267,10 +298,10 @@ int pdm_dma_read_dual(int16_t* channel_a, int16_t* channel_b, int max_samples)
                                                    (PDM_DMA_BUF_SAMPLES - 1u)]);
     }
 
-    pdm_dma_pos = (pdm_dma_pos + take) & (PDM_DMA_BUF_SAMPLES - 1u);
-    pdm_dma_pos2 = (pdm_dma_pos2 + take) & (PDM_DMA_BUF_SAMPLES - 1u);
     pdm_dma_stats.consumed_a += take;
     pdm_dma_stats.consumed_b += take;
+    pdm_dma_pos = pdm_ring_index(pdm_dma_stats.consumed_a, PDM_DMA_BUF_SAMPLES);
+    pdm_dma_pos2 = pdm_dma_pos;
     pdm_dma_stats.output_count += take;
     return (int)take;
 }
@@ -280,8 +311,7 @@ int pdm_dma_read(int16_t* mono, int max_samples)
     static int16_t discard_b[128];
     int total = 0;
     while (total < max_samples) {
-        int take = max_samples - total;
-        if (take > 128) take = 128;
+        int take = (int)pdm_compat_read_chunk((uint32_t)(max_samples - total));
         int n = pdm_dma_read_dual(mono + total, discard_b, take);
         if (n <= 0) break;
         total += n;
@@ -320,9 +350,24 @@ void DFSDM1_FLT1_IRQHandler(void)
     isr_count++;
 }
 
+void DMA1_Channel5_IRQHandler(void)
+{
+    pdm_dma_account_pending_tc(&pdm_dma_completed_a, DMA_ISR_TCIF5, DMA_IFCR_CTCIF5);
+}
+
+void DMA1_Channel4_IRQHandler(void)
+{
+    pdm_dma_account_pending_tc(&pdm_dma_completed_b, DMA_ISR_TCIF4, DMA_IFCR_CTCIF4);
+}
+
 uint32_t pdm_overruns(void) { return overruns; }
 PdmCaptureStats pdm_capture_stats(void)
 {
+    const uint32_t primask = pdm_irq_lock();
+    pdm_dma_stats.produced_a = pdm_dma_snapshot_produced(
+        PDM_DMA_CH, &pdm_dma_completed_a, DMA_ISR_TCIF5, DMA_IFCR_CTCIF5);
+    pdm_dma_stats.produced_b = pdm_dma_snapshot_produced(
+        PDM_DMA2_CH, &pdm_dma_completed_b, DMA_ISR_TCIF4, DMA_IFCR_CTCIF4);
     PdmCaptureStats stats;
     stats.produced_a = pdm_dma_stats.produced_a;
     stats.produced_b = pdm_dma_stats.produced_b;
@@ -332,6 +377,7 @@ PdmCaptureStats pdm_capture_stats(void)
     stats.overruns_b = pdm_dma_stats.overruns_b;
     stats.paired_overruns = pdm_dma_stats.paired_overruns;
     stats.output_count = pdm_dma_stats.output_count;
+    pdm_irq_unlock(primask);
     return stats;
 }
 uint32_t pdm_sample_count(void) { return samples; }
