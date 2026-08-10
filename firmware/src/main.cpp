@@ -10,6 +10,7 @@
 #include "NoiseReduction.h"
 #include "DeviceTime.h"
 #include "Battery.h"
+#include "TransferBuffer.h"
 #include <string.h>
 
 extern "C" void SystemClock_Config(void);
@@ -321,7 +322,7 @@ static void download_file(const char* fname)
 static void download_file2(const char* fname)
 {
     FIL f;
-    uint8_t buf[16384];
+    uint8_t* const buf = transfer_buffer(0);
     UINT rd = 0;
     char path[32];
 
@@ -333,7 +334,7 @@ static void download_file2(const char* fname)
     uint32_t total = 0;
     while (total < size) {
         dbg_iwdg_kick();
-        if (f_read(&f, buf, sizeof(buf), &rd) != FR_OK || rd == 0) break;
+        if (f_read(&f, buf, (UINT)transfer_buffer_size(), &rd) != FR_OK || rd == 0) break;
         total += rd;
         /* Stream continuously; Serial.write blocks when the CDC TX ring is full,
            providing natural backpressure without per-chunk ACK round-trips. */
@@ -784,7 +785,7 @@ loop_restart:
                             f_closedir(&dir);
                         }
                         FIL f2;
-                        uint8_t big[16384];
+                        uint8_t* const big = transfer_buffer(0);
                         char p2[48];
                         snprintf(p2, sizeof(p2), "0:/%s", fname);
                         if (f_open(&f2, p2, FA_READ) != FR_OK) { Serial.println("SDSPEED open FAIL"); return; }
@@ -793,7 +794,7 @@ loop_restart:
                         while (rd2 < 2u * 1024u * 1024u) {
                             dbg_iwdg_kick();
                             UINT r2;
-                            if (f_read(&f2, big, sizeof(big), &r2) != FR_OK || r2 == 0) break;
+                            if (f_read(&f2, big, (UINT)transfer_buffer_size(), &r2) != FR_OK || r2 == 0) break;
                             rd2 += r2; n2++;
                         }
                         uint32_t dt = millis() - t0;

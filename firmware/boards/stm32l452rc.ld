@@ -7,7 +7,7 @@
 **
 ** @brief       : Linker script for STM32L452RCTx Device from STM32L4 series
 **                      256Kbytes FLASH
-**                      64Kbytes RAM
+**                      128Kbytes SRAM1
 **                      32Kbytes RAM2
 **
 **                Set heap size, stack size and stack location according
@@ -46,7 +46,7 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 /* Memories definition */
 MEMORY
 {
-  RAM    (xrw)    : ORIGIN = 0x20000000,   LENGTH = 64K
+  RAM    (xrw)    : ORIGIN = 0x20000000,   LENGTH = 128K
   RAM2    (xrw)    : ORIGIN = 0x10000000,   LENGTH = 32K
   FLASH    (rx)    : ORIGIN = 0x8000000,   LENGTH = 256K
 }
@@ -164,6 +164,19 @@ SECTIONS
     _ebss = .;         /* define a global symbol at bss end */
     __bss_end__ = _ebss;
   } >RAM
+
+  /* Dedicated high-throughput workspace in the separate SRAM2 bank. */
+  .ram2 (NOLOAD) :
+  {
+    . = ALIGN(32);
+    __ram2_start__ = .;
+    KEEP(*(.ram2))
+    KEEP(*(.ram2*))
+    . = ALIGN(32);
+    __ram2_end__ = .;
+  } >RAM2
+
+  ASSERT(SIZEOF(.ram2) <= LENGTH(RAM2), "SRAM2 overflow")
 
   /* User_heap_stack section, used to check that there is enough "RAM" Ram  type memory left */
   ._user_heap_stack :
