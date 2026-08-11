@@ -184,7 +184,7 @@ void test_channel_swap_has_symmetric_weight_trajectory(void)
     }
 }
 
-void test_delayed_correlated_channels_report_lag_and_high_correlation(void)
+void test_delayed_correlated_channels_report_lag_without_block_local_alignment(void)
 {
     AudioFusion fusion;
     fusion.reset(kRate);
@@ -198,7 +198,7 @@ void test_delayed_correlated_channels_report_lag_and_high_correlation(void)
     const AudioFusionStats stats = fusion.stats();
     TEST_ASSERT_INT_WITHIN(1, 3, stats.best_lag);
     TEST_ASSERT_TRUE(stats.correlation_q15 > 24000);
-    TEST_ASSERT_TRUE(stats.lag_alignment_active);
+    TEST_ASSERT_FALSE(stats.lag_alignment_active);
 }
 
 void test_weak_correlation_does_not_enable_coherent_alignment(void)
@@ -279,7 +279,7 @@ int main(void)
     RUN_TEST(test_weight_change_is_bounded_per_block);
     RUN_TEST(test_high_pass_removes_dc_within_one_block);
     RUN_TEST(test_channel_swap_has_symmetric_weight_trajectory);
-    RUN_TEST(test_delayed_correlated_channels_report_lag_and_high_correlation);
+    RUN_TEST(test_delayed_correlated_channels_report_lag_without_block_local_alignment);
     RUN_TEST(test_weak_correlation_does_not_enable_coherent_alignment);
     RUN_TEST(test_anti_correlated_delayed_channels_do_not_enable_alignment);
     RUN_TEST(test_opposing_and_adding_full_scale_inputs_saturate_safely);

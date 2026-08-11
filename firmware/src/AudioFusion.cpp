@@ -7,7 +7,6 @@ namespace {
 static const int32_t kQ15One = 32768;
 static const int32_t kHealthyMinWeightQ15 = 3277;
 static const int32_t kHealthyMaxWeightQ15 = kQ15One - kHealthyMinWeightQ15;
-static const int32_t kAlignmentThresholdQ15 = 24576;
 static const uint32_t kHighPassDropNumerator = 20588742u;
 
 static int32_t abs_i32(int32_t value)
@@ -122,7 +121,8 @@ void AudioFusion::update_correlation()
 
     stats_.best_lag = best_lag;
     stats_.correlation_q15 = best_correlation;
-    stats_.lag_alignment_active = best_correlation >= kAlignmentThresholdQ15;
+    // Keep lag diagnostic-only until alignment uses a continuous delay line.
+    stats_.lag_alignment_active = false;
 }
 
 void AudioFusion::process(const int16_t* a, const int16_t* b, int16_t* mono,
@@ -222,15 +222,8 @@ void AudioFusion::process(const int16_t* a, const int16_t* b, int16_t* mono,
     update_correlation();
     const int32_t weight_b_q15 = kQ15One - weight_a_q15_;
     for (uint32_t i = 0; i < count; i++) {
-        int32_t aligned_b = conditioned_b[i];
-        if (stats_.lag_alignment_active) {
-            const int32_t aligned_index = (int32_t)i + stats_.best_lag;
-            if (aligned_index >= 0 && aligned_index < (int32_t)count) {
-                aligned_b = conditioned_b[aligned_index];
-            }
-        }
         const int64_t mixed = (int64_t)conditioned_a[i] * weight_a_q15_ +
-                              (int64_t)aligned_b * weight_b_q15;
+                              (int64_t)conditioned_b[i] * weight_b_q15;
         mono[i] = saturate_i16((mixed + 16384) >> 15);
     }
 

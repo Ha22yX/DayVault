@@ -2,6 +2,8 @@
 
 DayVault records conversations as standard Ogg Opus files. The device combines its two PDM microphones with adaptive fusion, applies speech leveling, then stores one 16-bit mono stream at exactly 16 kHz. The experimental spectral noise-reduction stage was removed because it smeared speech and reduced intelligibility.
 
+The fusion stage still measures inter-microphone lag and correlation for diagnostics, but production mixing keeps both channels sample-synchronous. Block-local sample shifting is disabled because changing alignment at 128-sample boundaries can cancel speech transients and sound like missing Opus packets.
+
 ## Format and storage
 
 - New recordings use the `.OPUS` extension and contain standard Ogg Opus data. They can be decoded by normal Ogg Opus-compatible software.
