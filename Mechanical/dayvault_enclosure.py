@@ -127,8 +127,8 @@ def _assign_material(obj, material) -> None:
 
 def reset_scene() -> None:
     require_blender()
-    bpy.ops.object.select_all(action="SELECT")
-    bpy.ops.object.delete(use_global=False)
+    for obj in tuple(bpy.data.objects):
+        bpy.data.objects.remove(obj, do_unlink=True)
     for datablocks in (
         bpy.data.meshes,
         bpy.data.curves,
@@ -671,19 +671,47 @@ def validate_print_mesh(obj) -> List[str]:
     return errors
 
 
-def _export_stl(obj, path: Path) -> None:
-    bpy.ops.object.select_all(action="DESELECT")
-    obj.select_set(True)
-    bpy.context.view_layer.objects.active = obj
-    if hasattr(bpy.ops.wm, "stl_export"):
-        bpy.ops.wm.stl_export(
-            filepath=str(path),
-            export_selected_objects=True,
-            ascii_format=False,
-        )
-    else:
-        bpy.ops.export_mesh.stl(filepath=str(path), use_selection=True, ascii=False)
-    obj.select_set(False)
+def _world_bounds(obj) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+    corners = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
+    minimum = tuple(min(corner[axis] for corner in corners) for axis in range(3))
+    maximum = tuple(max(corner[axis] for corner in corners) for axis in range(3))
+    return minimum, maximum
+
+
+def _export_stl(
+    obj,
+    path: Path,
+    rotation: Sequence[float] = (0.0, 0.0, 0.0),
+) -> None:
+    # Export a disposable, print-oriented copy so the saved assembly stays assembled.
+    export_obj = obj.copy()
+    export_obj.data = obj.data.copy()
+    export_obj.name = f"{obj.name}_STL_EXPORT"
+    bpy.context.scene.collection.objects.link(export_obj)
+    try:
+        bpy.ops.object.select_all(action="DESELECT")
+        export_obj.select_set(True)
+        bpy.context.view_layer.objects.active = export_obj
+        export_obj.rotation_euler = rotation
+        bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+        minimum, _ = _world_bounds(export_obj)
+        export_obj.location.z -= minimum[2]
+
+        if hasattr(bpy.ops.wm, "stl_export"):
+            bpy.ops.wm.stl_export(
+                filepath=str(path),
+                export_selected_objects=True,
+                ascii_format=False,
+            )
+        else:
+            bpy.ops.export_mesh.stl(
+                filepath=str(path), use_selection=True, ascii=False
+            )
+    finally:
+        mesh = export_obj.data
+        bpy.data.objects.remove(export_obj, do_unlink=True)
+        if mesh.users == 0:
+            bpy.data.meshes.remove(mesh)
 
 
 def _camera_target(camera, target: Sequence[float]) -> None:
@@ -828,7 +856,11 @@ def build_all(output_root: str | Path) -> Dict[str, object]:
         raise RuntimeError(" | ".join(fatal))
 
     _export_stl(front, export_dir / "DayVault_FrontCover.stl")
-    _export_stl(rear, export_dir / "DayVault_RearShell_Clip.stl")
+    _export_stl(
+        rear,
+        export_dir / "DayVault_RearShell_Clip.stl",
+        rotation=(0.0, -math.pi / 2.0, 0.0),
+    )
     _render_previews(export_dir, front, rear, references)
     bpy.ops.wm.save_as_mainfile(filepath=str(output_root / "DayVault_Enclosure.blend"))
     return {

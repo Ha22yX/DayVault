@@ -50,11 +50,21 @@ Reference objects are named `REF_*` and are excluded from STL export.
 - Perimeters: 3
 - Top/bottom layers: 5
 - Infill: 25-35%
-- Supports: local support under the clip only
+- Brim: 8-10 mm on the rear shell
+- Supports: disabled by default; add only a small local/tree support below the retention lip
 - Elephant-foot compensation: 0.15-0.20 mm if available
 
-Print the front cover with its flat outer face on the bed. Orient the rear shell so layer
-lines run along the clip length; use removable local supports under the free clip arm.
+The exported STLs already have their intended print orientation:
+
+![Correct print orientation](exports/print_orientation.png)
+
+- Print the front cover with its flat outer face on the bed and the locating pin upward.
+- Print the rear shell on its plain left side wall. Its rear wall and clip stand vertically;
+  the STL is approximately 14.2 x 40 x 46 mm in this orientation.
+- Do not use the slicer's auto-orient feature on the rear shell and do not place its open
+  cavity against the bed. That orientation creates a large unsupported bridge.
+- Inspect the sliced layers before printing. No support should fill the enclosure cavity,
+  acoustic paths, or USB-C opening.
 
 Before final assembly, check PCB edge fit, battery clearance, USB-C plug insertion, both
 microphone paths, the four snap detents, and repeated clip flexing. Do not force or rigidly

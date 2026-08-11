@@ -47,10 +47,10 @@ class ExportedStlTests(unittest.TestCase):
             EXPORT_DIR / "DayVault_RearShell_Clip.stl"
         )
         self.assertGreater(triangles, 800)
-        self.assertAlmostEqual(dimensions[0], 46.0, delta=0.05)
+        self.assertGreater(dimensions[0], 13.5)
+        self.assertLess(dimensions[0], 15.0)
         self.assertAlmostEqual(dimensions[1], 40.0, delta=0.05)
-        self.assertGreater(dimensions[2], 13.5)
-        self.assertLess(dimensions[2], 15.0)
+        self.assertAlmostEqual(dimensions[2], 46.0, delta=0.05)
 
 
 if __name__ == "__main__":

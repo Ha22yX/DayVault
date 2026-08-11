@@ -189,9 +189,12 @@ is permitted and must be removable without thinning the flexible section.
 - Internal corners receive at least 0.8 mm fillets where they affect stress or printing.
 - No printed support may be trapped inside the acoustic channels or USB tunnel.
 
-The front cover prints with its outer face on the build plate. The rear shell prints in
-the orientation that gives the clip root continuous longitudinal layers; use local tree
-supports under the clip if required. PETG is the final-material baseline.
+The front cover prints with its outer face on the build plate. The rear-shell STL is
+pre-oriented on its plain left side wall, with the rear wall and clip standing vertically.
+This avoids bridging the full enclosure cavity and gives the clip root continuous
+longitudinal layers. Use an 8-10 mm brim, disable global supports, and add only a small
+local/tree support below the retention lip if the sliced preview requires it. Never place
+the rear shell open-side-down. PETG is the final-material baseline.
 
 ## 10. Deliverables
 
