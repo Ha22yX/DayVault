@@ -28,3 +28,7 @@ __pycache__/
 .pytest_tmp*/
 .pytest-tmp-*/
 hardware_bulk_test.part
+
+# Local design-brainstorm companion files
+.superpowers/
+*.blend1

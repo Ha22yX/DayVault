@@ -9,8 +9,9 @@
 
 Create a compact, wearable enclosure for the 30 x 30 mm DayVault PCB and a protected
 503040 LiPo battery. The enclosure must preserve the opposite-facing acoustic paths of
-the two SPH0655 microphones, expose USB-C and the microSD card, protect the electronics
-from clothing contact, and print reliably on a typical FDM printer.
+the two SPH0655 microphones, expose USB-C, protect the electronics from clothing contact,
+and print reliably on a typical FDM printer. The microSD card and both service buttons
+remain internal.
 
 The selected mechanical arrangement is an offset stack. The PCB remains upright while
 the 42 x 30 x 5 mm battery is rotated horizontally and shifted downward behind the PCB.
@@ -31,7 +32,7 @@ were read through the live API and converted from mil to millimetres.
 | USB1 centre | Top | `(15.000, 26.162)` mm | Bottom-edge USB-C opening |
 | SW1 RESET | Top | `(16.510, 20.193)` mm | Internal service control |
 | SW2 BOOT | Top | `(7.493, 10.287)` mm | Internal service control |
-| CARD1 microSD socket | Bottom | `(9.017, 7.112)` mm, rotation 180 degrees | Top-edge card access |
+| CARD1 microSD socket | Bottom | `(9.017, 7.112)` mm, rotation 180 degrees | Internal service access |
 
 The SPH0655 is a bottom-port microphone. U1 is mounted on the PCB top side, so its
 acoustic path exits through the PCB toward the PCB bottom side. U2 is mounted on the PCB
@@ -46,7 +47,7 @@ This orientation is a mechanical requirement and must not be mirrored during mod
 
 ## 3. Overall Envelope and Stack
 
-The nominal body envelope is **46.0 mm wide x 40.0 mm high x 16.0 mm deep**, excluding
+The nominal body envelope is **46.0 mm wide x 40.0 mm high x 15.2 mm deep**, excluding
 the clip projection. External corner radius is 3.0 mm. Enclosure XY coordinates use the
 body's upper-left corner as `(0, 0)`, with X right and Y down, matching the PCB coordinate
 directions. The Blender modelling origin is the centre of the front outer face; positive Z
@@ -57,12 +58,13 @@ The initial stack from the outward face to the clothing side is:
 
 | Layer | Nominal allowance |
 |---|---:|
-| Front wall | 1.6 mm |
+| Front wall | 1.2 mm |
 | Front component and acoustic clearance | 2.0 mm |
 | PCB | 1.6 mm |
 | Rear component clearance | 2.8 mm minimum |
 | Battery plus compression-free clearance | 5.5 mm |
-| Rear wall and local ribs | 1.6 mm minimum |
+| Rear wall | 1.2 mm |
+| Local structural ribs | 1.2 mm minimum |
 
 Local ribs may occupy unused XY regions, but no printed feature may press on the LiPo
 pouch. The battery cavity must provide at least 0.25 mm clearance on every side and
@@ -147,9 +149,8 @@ metal shell and verify insertion with a plug body at least 10 mm wide.
 
 ### microSD
 
-Provide a top-edge access slot centred at enclosure X = 17.017 mm, aligned with CARD1.
-The initial slot is 15.0 mm wide x 3.2 mm high. Include a 9.0 mm wide finger relief in
-the front cover so the card can be pressed and removed without opening the enclosure.
+Do not create an external microSD slot. Card replacement requires opening the enclosure.
+This leaves exactly three external passages: U1, U2, and USB-C.
 
 ### RESET and BOOT
 
@@ -167,8 +168,8 @@ U2 acoustic keep-out. Nominal clip geometry is:
 
 - width: 12.0 mm;
 - free length from root: 30.0 mm;
-- flexible thickness: 1.8 mm;
-- initial clothing gap: 1.2 mm;
+- flexible thickness: 1.6 mm;
+- initial clothing gap: 1.0 mm;
 - lower retention lip: 1.5 mm;
 - root fillet radius: 2.5 mm;
 - end radius: 3.0 mm.
@@ -180,7 +181,7 @@ is permitted and must be removable without thinning the flexible section.
 
 ## 9. FDM Rules
 
-- Nominal wall thickness: 1.6 mm, equivalent to four 0.4 mm extrusion widths.
+- Nominal wall thickness: 1.2 mm, equivalent to three 0.4 mm extrusion widths.
 - Minimum structural rib: 1.2 mm.
 - Minimum free-standing pin diameter: 2.0 mm; the PCB locator is 3.0 mm.
 - Mating clearance: 0.30 mm per side for the first prototype.
@@ -215,13 +216,14 @@ Before declaring the model complete:
 - confirm each STL is one watertight body with outward normals;
 - confirm minimum wall and snap-hook thicknesses;
 - section the assembly through both microphones, USB-C, battery, and clip root;
-- verify USB plug and microSD card insertion paths are unobstructed;
+- verify the USB plug insertion path is unobstructed and the microSD card is reachable
+  after opening the enclosure;
 - verify the battery does not intersect components, locator features, or the U2 channel;
 - render front, rear, side, exploded, and section views for review;
 - print a first prototype at 0.20 mm layer height and validate fit before tightening
   tolerances.
 
 The first prototype is accepted when the PCB and battery assemble without force, both
-sound passages remain open, USB-C and microSD are usable, the case survives repeated
-opening, and the clip holds the device on normal shirt fabric without sealing the rear
-microphone.
+sound passages remain open, USB-C is usable, the internal microSD card remains serviceable,
+the case survives repeated opening, and the clip holds the device on normal shirt fabric
+without sealing the rear microphone.
