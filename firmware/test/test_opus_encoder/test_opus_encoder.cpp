@@ -13,6 +13,7 @@
 static_assert(kOpusSampleRate == 16000, "Opus input rate must be 16 kHz");
 static_assert(kOpusFrameSamples == 320, "Opus frames must be 20 ms");
 static_assert(kOpusBitrate == 24000, "Opus target bitrate must be 24 kbit/s");
+static_assert(kOpusComplexity == 0, "Opus complexity must fit the 20 ms MCU budget");
 static_assert(kOpusMaxPacketBytes == 160, "Opus packet storage must remain bounded");
 
 namespace {

@@ -58,7 +58,7 @@ bool DayVaultOpusEncoder::begin(void* workspace, size_t bytes)
     if (opus_encoder_ctl(encoder_, OPUS_SET_VBR_CONSTRAINT(1)) != OPUS_OK) {
         return fail_begin();
     }
-    if (opus_encoder_ctl(encoder_, OPUS_SET_COMPLEXITY(3)) != OPUS_OK) {
+    if (opus_encoder_ctl(encoder_, OPUS_SET_COMPLEXITY(kOpusComplexity)) != OPUS_OK) {
         return fail_begin();
     }
     if (opus_encoder_ctl(encoder_, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE)) != OPUS_OK) {

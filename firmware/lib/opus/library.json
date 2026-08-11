@@ -6,6 +6,7 @@
     "includeDir": "include",
     "srcDir": ".",
     "flags": [
+      "-O2",
       "-DOPUS_BUILD",
       "-DFIXED_POINT=1",
       "-DDISABLE_FLOAT_API",

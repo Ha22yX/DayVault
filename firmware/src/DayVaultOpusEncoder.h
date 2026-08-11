@@ -6,6 +6,7 @@
 const int kOpusSampleRate = 16000;
 const int kOpusFrameSamples = 320;
 const int kOpusBitrate = 24000;
+const int kOpusComplexity = 0;
 const int kOpusMaxPacketBytes = 160;
 
 struct DayVaultOpusStats {

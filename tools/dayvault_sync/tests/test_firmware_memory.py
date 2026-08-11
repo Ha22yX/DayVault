@@ -12,6 +12,7 @@ COMPRESSED_RECORDER = REPO / "firmware" / "src" / "CompressedRecorder.cpp"
 COMPRESSED_RECORDER_HEADER = REPO / "firmware" / "src" / "CompressedRecorder.h"
 FS = REPO / "firmware" / "src" / "Fs.cpp"
 PLATFORMIO = REPO / "firmware" / "platformio.ini"
+OPUS_LIBRARY = REPO / "firmware" / "lib" / "opus" / "library.json"
 WINUSB_DEVICE = REPO / "firmware" / "src" / "WinUsbDevice.cpp"
 PDM_CAPTURE = REPO / "firmware" / "src" / "PdmCapture.cpp"
 PDM_CAPTURE_HEADER = REPO / "firmware" / "src" / "PdmCapture.h"
@@ -38,6 +39,13 @@ def test_linker_has_dedicated_noload_ram2_section():
 def test_platformio_board_reports_total_sram():
     board = json.loads(BOARD.read_text(encoding="utf-8"))
     assert board["upload"]["maximum_ram_size"] == 160 * 1024
+
+
+def test_release_build_uses_size_optimization_except_for_opus():
+    platformio_text = PLATFORMIO.read_text(encoding="utf-8")
+    opus_library = json.loads(OPUS_LIBRARY.read_text(encoding="utf-8"))
+    assert re.search(r"build_flags\s*=\s*\n\s*-Os", platformio_text)
+    assert "-O2" in opus_library["build"]["flags"]
 
 
 def test_main_has_no_16k_transfer_buffer_on_stack():
