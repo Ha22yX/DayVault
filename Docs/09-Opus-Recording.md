@@ -6,7 +6,7 @@ DayVault records conversations as standard Ogg Opus files. The device combines i
 
 - New recordings use the `.OPUS` extension and contain standard Ogg Opus data. They can be decoded by normal Ogg Opus-compatible software.
 - The encoder uses 20 ms frames (320 samples), target **24 kbit/s** constrained VBR, and restricted SILK for speech.
-- The STM32L452 production build uses Opus complexity 0 and compiles only the vendored codec at `-O2`; the rest of the firmware remains size-optimized. A 30.6-second board test measured a 10.8 ms slowest encode time and zero paired DMA overruns.
+- The STM32L452 production build uses Opus complexity 0. Project sources and the vendored codec compile at `-O2`, while FatFs, the Arduino core, and other libraries remain size-optimized at `-Os`. A 60.6-second board test measured a 14.4 ms slowest encode time, zero encoder errors, and zero paired DMA overruns.
 - Budget about **265 MB per day** of recording. Actual size varies with constrained VBR and Ogg container overhead.
 - Production recording writes only `.OPUS`; it does not keep a parallel WAV or raw PCM original.
 - Existing `.WAV` recordings are legacy files. They remain available for export and are eligible for circular deletion, but new recordings are not WAV files.

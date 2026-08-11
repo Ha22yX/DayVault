@@ -1,3 +1,4 @@
+import configparser
 import json
 import re
 from pathlib import Path
@@ -41,11 +42,14 @@ def test_platformio_board_reports_total_sram():
     assert board["upload"]["maximum_ram_size"] == 160 * 1024
 
 
-def test_release_build_uses_size_optimization_except_for_opus():
-    platformio_text = PLATFORMIO.read_text(encoding="utf-8")
+def test_release_build_uses_o2_for_project_sources_and_opus():
+    platformio = configparser.ConfigParser(interpolation=None)
+    platformio.read(PLATFORMIO, encoding="utf-8")
+    dayvault = platformio["env:dayvault"]
     opus_library = json.loads(OPUS_LIBRARY.read_text(encoding="utf-8"))
-    assert re.search(r"build_flags\s*=\s*\n\s*-Os", platformio_text)
-    assert "-O2" in opus_library["build"]["flags"]
+    assert dayvault.get("build_flags", "").split()[0] == "-Os"
+    assert dayvault.get("build_src_flags", "").split() == ["-O2"]
+    assert opus_library["build"]["flags"][0] == "-O2"
 
 
 def test_main_has_no_16k_transfer_buffer_on_stack():
