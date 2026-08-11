@@ -27,10 +27,8 @@ static int16_t g_transition_b[427u];
 static int16_t g_reference_a[kFrameSamples];
 static int16_t g_reference_b[kFrameSamples];
 static int16_t g_reference_fused[kFrameSamples];
-static int16_t g_reference_reduced[kFrameSamples];
 static int16_t g_reference_leveled[kFrameSamples];
 static AudioFusion g_reference_fusion;
-static NoiseReduction g_reference_reduction;
 static SpeechLeveler g_reference_leveler;
 
 void make_input()
@@ -95,7 +93,6 @@ void assert_expected_frames(const CapturedFrames& captured, const AudioPipelineS
     TEST_ASSERT_EQUAL_UINT64(kInputSamples, stats.captured_samples);
     TEST_ASSERT_EQUAL_UINT64(kInputSamples, stats.valid_samples);
     TEST_ASSERT_EQUAL_UINT32(4u, stats.emitted_frames);
-    TEST_ASSERT_EQUAL_UINT32(128u, stats.suppressed_latency_samples);
     TEST_ASSERT_FALSE(stats.failed);
     for (uint32_t i = expected_valid[3]; i < kFrameSamples; ++i) {
         TEST_ASSERT_EQUAL_INT16(0, captured.samples[3][i]);
@@ -115,10 +112,9 @@ void append_reference(CapturedFrames* captured, uint32_t* frame_samples,
     }
 }
 
-void process_reference_block(AudioFusion* fusion, NoiseReduction* reduction,
-                             SpeechLeveler* leveler, const int16_t* a, const int16_t* b,
-                             uint32_t valid_samples, bool* first_output,
-                             bool* delayed_speech_present, uint32_t* delayed_valid_samples,
+void process_reference_block(AudioFusion* fusion, SpeechLeveler* leveler,
+                             const int16_t* a, const int16_t* b,
+                             uint32_t valid_samples,
                              CapturedFrames* captured, uint32_t* frame_samples)
 {
     memset(g_reference_a, 0, sizeof(g_reference_a));
@@ -128,53 +124,33 @@ void process_reference_block(AudioFusion* fusion, NoiseReduction* reduction,
 
     fusion->process(g_reference_a, g_reference_b, g_reference_fused, kFrameSamples);
     const bool speech_present = fusion->stats().speech_present;
-    reduction->process(g_reference_fused, g_reference_reduced, kFrameSamples, speech_present);
-    leveler->process(g_reference_reduced, g_reference_leveled, kFrameSamples,
-                     *delayed_speech_present);
-    if (!*first_output) {
-        append_reference(captured, frame_samples, g_reference_leveled, *delayed_valid_samples);
-    } else {
-        *first_output = false;
-    }
-    *delayed_speech_present = speech_present;
-    *delayed_valid_samples = valid_samples;
+    leveler->process(g_reference_fused, g_reference_leveled, kFrameSamples,
+                     speech_present);
+    append_reference(captured, frame_samples, g_reference_leveled, valid_samples);
 }
 
-void make_delayed_speech_reference(CapturedFrames* captured)
+void make_direct_speech_reference(CapturedFrames* captured)
 {
-    bool first_output = true;
-    bool delayed_speech_present = false;
-    uint32_t delayed_valid_samples = 0u;
     uint32_t frame_samples = 0u;
 
     memset(captured, 0, sizeof(*captured));
     g_reference_fusion.reset(kSampleRate);
-    g_reference_reduction.reset(kSampleRate);
     g_reference_leveler.reset(kSampleRate);
-    process_reference_block(&g_reference_fusion, &g_reference_reduction, &g_reference_leveler,
-                            g_transition_a,
-                            g_transition_b, 128u, &first_output,
-                            &delayed_speech_present, &delayed_valid_samples,
+    process_reference_block(&g_reference_fusion, &g_reference_leveler,
+                            g_transition_a, g_transition_b, 128u,
                             captured, &frame_samples);
-    process_reference_block(&g_reference_fusion, &g_reference_reduction, &g_reference_leveler,
+    process_reference_block(&g_reference_fusion, &g_reference_leveler,
                             g_transition_a + 128u,
-                            g_transition_b + 128u, 128u, &first_output,
-                            &delayed_speech_present, &delayed_valid_samples,
+                            g_transition_b + 128u, 128u,
                             captured, &frame_samples);
-    process_reference_block(&g_reference_fusion, &g_reference_reduction, &g_reference_leveler,
+    process_reference_block(&g_reference_fusion, &g_reference_leveler,
                             g_transition_a + 256u,
-                            g_transition_b + 256u, 128u, &first_output,
-                            &delayed_speech_present, &delayed_valid_samples,
+                            g_transition_b + 256u, 128u,
                             captured, &frame_samples);
-    process_reference_block(&g_reference_fusion, &g_reference_reduction, &g_reference_leveler,
+    process_reference_block(&g_reference_fusion, &g_reference_leveler,
                             g_transition_a + 384u,
-                            g_transition_b + 384u, 43u, &first_output,
-                            &delayed_speech_present, &delayed_valid_samples,
+                            g_transition_b + 384u, 43u,
                             captured, &frame_samples);
-    process_reference_block(&g_reference_fusion, &g_reference_reduction, &g_reference_leveler,
-                            g_reference_a, g_reference_b,
-                            0u, &first_output, &delayed_speech_present,
-                            &delayed_valid_samples, captured, &frame_samples);
 
     TEST_ASSERT_EQUAL_UINT32(107u, frame_samples);
     captured->valid_samples[captured->frame_count] = (uint16_t)frame_samples;
@@ -241,7 +217,7 @@ void test_sink_failure_is_latched(void)
     TEST_ASSERT_EQUAL_UINT32(0u, stats.emitted_frames);
 }
 
-void test_speech_metadata_tracks_delayed_nr_audio_through_partial_flush(void)
+void test_speech_metadata_tracks_current_audio_through_partial_flush(void)
 {
     AudioPipeline pipeline;
     CapturedFrames captured = {};
@@ -253,7 +229,7 @@ void test_speech_metadata_tracks_delayed_nr_audio_through_partial_flush(void)
     make_speech_pulse(g_transition_b + 128u, 128u);
     make_speech_pulse(g_transition_a + 384u, 43u);
     make_speech_pulse(g_transition_b + 384u, 43u);
-    make_delayed_speech_reference(&expected);
+    make_direct_speech_reference(&expected);
 
     TEST_ASSERT_TRUE(pipeline.reset(kSampleRate, capture_frame, &captured));
     for (uint32_t offset = 0u; offset < 427u;) {
@@ -284,7 +260,6 @@ void test_calls_before_reset_are_rejected_with_zero_stats(void)
     TEST_ASSERT_EQUAL_UINT64(0u, stats.valid_samples);
     TEST_ASSERT_EQUAL_UINT32(0u, stats.emitted_frames);
     TEST_ASSERT_EQUAL_UINT32(0u, stats.dsp_blocks);
-    TEST_ASSERT_EQUAL_UINT32(0u, stats.suppressed_latency_samples);
     TEST_ASSERT_FALSE(stats.failed);
     pipeline->~AudioPipeline();
 }
@@ -371,8 +346,20 @@ void test_stats_expose_latest_dsp_diagnostics(void)
 
     const AudioPipelineStats stats = pipeline.stats();
     TEST_ASSERT_EQUAL_INT32(32768, stats.fusion.weight_a_q15 + stats.fusion.weight_b_q15);
-    TEST_ASSERT_EQUAL_UINT32(128u, stats.noise_reduction.latency_samples);
     TEST_ASSERT_GREATER_THAN(0u, stats.leveler.gain_q16);
+    TEST_ASSERT_TRUE(pipeline.finish());
+}
+
+void test_production_pipeline_emits_without_spectral_processing_latency(void)
+{
+    AudioPipeline pipeline;
+    CapturedFrames captured = {};
+    int16_t samples[384] = {};
+
+    TEST_ASSERT_TRUE(pipeline.reset(kSampleRate, capture_frame, &captured));
+    TEST_ASSERT_TRUE(pipeline.push(samples, samples, 384u));
+    TEST_ASSERT_EQUAL_UINT32(1u, captured.frame_count);
+    TEST_ASSERT_EQUAL_UINT16(320u, captured.valid_samples[0]);
     TEST_ASSERT_TRUE(pipeline.finish());
 }
 
@@ -382,7 +369,7 @@ int main(void)
     RUN_TEST(test_chunking_is_invariant_and_preserves_exact_valid_samples);
     RUN_TEST(test_empty_input_emits_no_frame);
     RUN_TEST(test_sink_failure_is_latched);
-    RUN_TEST(test_speech_metadata_tracks_delayed_nr_audio_through_partial_flush);
+    RUN_TEST(test_speech_metadata_tracks_current_audio_through_partial_flush);
     RUN_TEST(test_calls_before_reset_are_rejected_with_zero_stats);
     RUN_TEST(test_only_one_pipeline_can_be_active);
     RUN_TEST(test_bad_push_failure_releases_storage_for_another_pipeline);
@@ -390,5 +377,6 @@ int main(void)
     RUN_TEST(test_finish_failure_releases_storage_for_another_pipeline);
     RUN_TEST(test_pipeline_cannot_be_copied_or_moved);
     RUN_TEST(test_stats_expose_latest_dsp_diagnostics);
+    RUN_TEST(test_production_pipeline_emits_without_spectral_processing_latency);
     return UNITY_END();
 }

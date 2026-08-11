@@ -7,7 +7,6 @@
 #include "RingBuf.h"
 #include "PdmCapture.h"
 #include "WavFile.h"
-#include "NoiseReduction.h"
 #include "DeviceTime.h"
 #include "Battery.h"
 #include "TransferBuffer.h"
@@ -814,8 +813,6 @@ static void opusstat_print(void)
     Serial.print(" fusion_wa="); Serial.print(stats.pipeline.fusion.weight_a_q15);
     Serial.print(" fusion_wb="); Serial.print(stats.pipeline.fusion.weight_b_q15);
     Serial.print(" fusion_faults="); Serial.print(stats.pipeline.fusion.fault_flags);
-    Serial.print(" nr_ready="); Serial.print(stats.pipeline.noise_reduction.noise_model_ready ? 1 : 0);
-    Serial.print(" nr_gain="); Serial.print(stats.pipeline.noise_reduction.average_gain_q15);
     Serial.print(" level_gain="); Serial.print(stats.pipeline.leveler.applied_gain_q16);
     Serial.print(" limiter="); Serial.print(stats.pipeline.leveler.limiter_activations);
     Serial.print(" active="); Serial.print(recorder.active() ? 1 : 0);

@@ -1,5 +1,7 @@
 # Dual-Microphone Adaptive Audio Implementation Plan
 
+> **Superseded audio stage (2026-08-11):** The spectral `NoiseReduction` stage described below was removed from the production pipeline and source tree after real recordings showed smeared speech and reduced intelligibility. The remaining references are historical implementation context, not current architecture or runnable instructions.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the noisy single-microphone recording path with a validated two-channel PDM acquisition path that adaptively preserves both the wearer and the forward conversation partner, then writes one clearer mono WAV stream.

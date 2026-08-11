@@ -3,12 +3,10 @@
 #include <string.h>
 
 AudioFusion AudioPipeline::fusion_;
-NoiseReduction AudioPipeline::noise_reduction_;
 SpeechLeveler AudioPipeline::speech_leveler_;
 int16_t AudioPipeline::input_a_[AudioPipeline::kDspBlockSamples];
 int16_t AudioPipeline::input_b_[AudioPipeline::kDspBlockSamples];
 int16_t AudioPipeline::fused_[AudioPipeline::kDspBlockSamples];
-int16_t AudioPipeline::reduced_[AudioPipeline::kDspBlockSamples];
 int16_t AudioPipeline::leveled_[AudioPipeline::kDspBlockSamples];
 int16_t AudioPipeline::codec_frame_[AudioPipeline::kCodecFrameSamples];
 AudioPipeline* AudioPipeline::active_instance_ = 0;
@@ -17,10 +15,7 @@ AudioPipeline::AudioPipeline()
     : sink_(0),
       sink_context_(0),
       input_count_(0u),
-      delayed_valid_samples_(0u),
       codec_frame_count_(0u),
-      delayed_speech_present_(false),
-      latency_suppressed_(false),
       initialized_(false),
       finished_(false),
       stats_()
@@ -39,10 +34,7 @@ bool AudioPipeline::reset(uint32_t sample_rate, AudioFrameSink sink, void* sink_
         sink_ = 0;
         sink_context_ = 0;
         input_count_ = 0u;
-        delayed_valid_samples_ = 0u;
         codec_frame_count_ = 0u;
-        delayed_speech_present_ = false;
-        latency_suppressed_ = false;
         initialized_ = false;
         finished_ = false;
         memset(&stats_, 0, sizeof(stats_));
@@ -54,10 +46,7 @@ bool AudioPipeline::reset(uint32_t sample_rate, AudioFrameSink sink, void* sink_
     sink_ = sink;
     sink_context_ = sink_context;
     input_count_ = 0u;
-    delayed_valid_samples_ = 0u;
     codec_frame_count_ = 0u;
-    delayed_speech_present_ = false;
-    latency_suppressed_ = false;
     initialized_ = true;
     finished_ = false;
     memset(&stats_, 0, sizeof(stats_));
@@ -65,10 +54,8 @@ bool AudioPipeline::reset(uint32_t sample_rate, AudioFrameSink sink, void* sink_
     memset(input_b_, 0, sizeof(input_b_));
     memset(codec_frame_, 0, sizeof(codec_frame_));
     fusion_.reset(sample_rate);
-    noise_reduction_.reset(sample_rate);
     speech_leveler_.reset(sample_rate);
     stats_.fusion = fusion_.stats();
-    stats_.noise_reduction = noise_reduction_.stats();
     stats_.leveler = speech_leveler_.stats();
 
     return true;
@@ -130,10 +117,6 @@ bool AudioPipeline::finish()
         if (!process_dsp_block(valid_samples)) return false;
     }
 
-    memset(input_a_, 0, sizeof(input_a_));
-    memset(input_b_, 0, sizeof(input_b_));
-    if (!process_dsp_block(0u)) return false;
-
     if (codec_frame_count_ != 0u) {
         const uint16_t valid_samples = (uint16_t)codec_frame_count_;
         memset(codec_frame_ + codec_frame_count_, 0,
@@ -156,22 +139,12 @@ bool AudioPipeline::process_dsp_block(uint32_t valid_samples)
 {
     fusion_.process(input_a_, input_b_, fused_, kDspBlockSamples);
     const AudioFusionStats fusion_stats = fusion_.stats();
-    noise_reduction_.process(fused_, reduced_, kDspBlockSamples, fusion_stats.speech_present);
-    speech_leveler_.process(reduced_, leveled_, kDspBlockSamples, delayed_speech_present_);
+    speech_leveler_.process(fused_, leveled_, kDspBlockSamples,
+                            fusion_stats.speech_present);
     stats_.fusion = fusion_stats;
-    stats_.noise_reduction = noise_reduction_.stats();
     stats_.leveler = speech_leveler_.stats();
     stats_.dsp_blocks++;
-
-    if (!latency_suppressed_) {
-        latency_suppressed_ = true;
-        stats_.suppressed_latency_samples = kDspBlockSamples;
-    } else if (!append_codec_samples(leveled_, delayed_valid_samples_)) {
-        return false;
-    }
-    delayed_valid_samples_ = valid_samples;
-    delayed_speech_present_ = fusion_stats.speech_present;
-    return true;
+    return append_codec_samples(leveled_, valid_samples);
 }
 
 bool AudioPipeline::append_codec_samples(const int16_t* samples, uint32_t valid_samples)

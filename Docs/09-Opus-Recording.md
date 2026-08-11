@@ -1,6 +1,6 @@
 # Opus Recording
 
-DayVault records conversations as standard Ogg Opus files. The device combines its two PDM microphones with adaptive fusion, then stores one 16-bit mono stream at exactly 16 kHz. Noise reduction and speech leveling run before encoding.
+DayVault records conversations as standard Ogg Opus files. The device combines its two PDM microphones with adaptive fusion, applies speech leveling, then stores one 16-bit mono stream at exactly 16 kHz. The experimental spectral noise-reduction stage was removed because it smeared speech and reduced intelligibility.
 
 ## Format and storage
 
@@ -36,7 +36,6 @@ Send `OPUSSTAT` over USB CDC to print the recorder's current or most recent stat
 | `enc_err`, `max_us`, `workspace` | Encoder error count, slowest encode time in microseconds, and Opus workspace use. |
 | `dma_overruns` | Paired microphone DMA overruns. |
 | `fusion_wa`, `fusion_wb`, `fusion_faults` | Adaptive fusion weights and microphone fault flags. |
-| `nr_ready`, `nr_gain` | Noise-reduction model readiness and average gain. |
 | `level_gain`, `limiter` | Speech-leveler gain and limiter activations. |
 | `active`, `primary`, `cleanup`, `err` | Recording state and primary, cleanup, and latest recorder result. |
 

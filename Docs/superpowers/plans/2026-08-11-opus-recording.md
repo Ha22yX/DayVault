@@ -1,5 +1,7 @@
 # Direct Opus Recording Implementation Plan
 
+> **Superseded audio stage (2026-08-11):** The spectral `NoiseReduction` stage described below was removed from the production pipeline and source tree after real recordings showed smeared speech and reduced intelligibility. The remaining references are historical implementation context, not current architecture or runnable instructions.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace production PCM/WAV storage with standard 16 kHz mono Ogg Opus recording at a target 24 kbit/s, without retaining a PCM original.
@@ -516,4 +518,3 @@ Write a deterministic host-test `.opus` fixture to a temporary directory, then r
 git add Docs README.md README.zh-CN.md
 git commit -m "docs(audio): document direct Opus recording"
 ```
-

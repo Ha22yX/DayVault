@@ -55,7 +55,7 @@ Legacy `.WAV` files are still listed, downloadable, and eligible for circular de
 OPUSSTAT bitrate=<bps> rate=<hz> frames=<n> pages=<n> valid=<samples> bytes=<n>
          enc_err=<n> max_us=<us> workspace=<bytes> dma_overruns=<n>
          fusion_wa=<q15> fusion_wb=<q15> fusion_faults=<flags>
-         nr_ready=<0|1> nr_gain=<q15> level_gain=<q16> limiter=<n>
+         level_gain=<q16> limiter=<n>
          active=<0|1> primary=<result> cleanup=<result> err=<result>
 ```
 

@@ -1,5 +1,7 @@
 # Dual-Microphone Adaptive Audio Design
 
+> **Superseded audio stage (2026-08-11):** The spectral `NoiseReduction` stage described in this design was removed from the production pipeline and source tree after real recordings showed smeared speech and reduced intelligibility. The current path is adaptive fusion, speech leveling, then Opus encoding.
+
 **Date:** 2026-08-11  
 **Status:** In implementation; generic optimization scope
 **Target:** DayVault STM32L452 recorder firmware
