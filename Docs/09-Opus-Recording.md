@@ -4,6 +4,8 @@ DayVault records conversations as standard Ogg Opus files. The device combines i
 
 The fusion stage still measures inter-microphone lag and correlation for diagnostics, but production mixing keeps both channels sample-synchronous. Block-local sample shifting is disabled because changing alignment at 128-sample boundaries can cancel speech transients and sound like missing Opus packets.
 
+Speech leveling keeps its current gain across brief low-energy gaps for 200 ms. This prevents an 8 ms block near the speech threshold from instantly dropping amplified speech back to unity gain and making quiet syllable fragments sound omitted. Sustained non-speech still returns to unity gain so background noise is not amplified indefinitely.
+
 ## Format and storage
 
 - New recordings use the `.OPUS` extension and contain standard Ogg Opus data. They can be decoded by normal Ogg Opus-compatible software.

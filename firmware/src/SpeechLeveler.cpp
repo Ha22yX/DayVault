@@ -36,8 +36,10 @@ static uint32_t saturating_increment(uint32_t value)
 
 void SpeechLeveler::reset(uint32_t sample_rate)
 {
-    (void)sample_rate;
     gain_q16_ = kUnityQ16;
+    speech_hangover_samples_ = 0u;
+    speech_hangover_reload_samples_ =
+        (uint32_t)(((uint64_t)sample_rate * kSpeechHangoverMs) / 1000u);
     bypass_ = false;
     memset(&stats_, 0, sizeof(stats_));
     stats_.gain_q16 = gain_q16_;
@@ -67,6 +69,14 @@ void SpeechLeveler::process(const int16_t* in, int16_t* out, uint32_t count,
         energy += (uint64_t)((int32_t)in[i] * in[i]);
     }
     const uint32_t block_rms = isqrt_u64(energy / count);
+    bool speech_held = speech_present;
+    if (speech_present) {
+        speech_hangover_samples_ = speech_hangover_reload_samples_;
+    } else if (speech_hangover_samples_ != 0u) {
+        speech_held = true;
+        speech_hangover_samples_ = count >= speech_hangover_samples_
+            ? 0u : speech_hangover_samples_ - count;
+    }
     if (speech_present && block_rms > 0u) {
         uint32_t target_gain = (uint32_t)(((uint64_t)kRmsTarget << 16u) / block_rms);
         if (target_gain > kMaxGainQ16) target_gain = kMaxGainQ16;
@@ -86,7 +96,7 @@ void SpeechLeveler::process(const int16_t* in, int16_t* out, uint32_t count,
         gain_q16_ += release > kReleaseStepQ16 ? kReleaseStepQ16 : release;
     }
 
-    const uint32_t applied_gain = !speech_present && gain_q16_ > kUnityQ16 ?
+    const uint32_t applied_gain = !speech_held && gain_q16_ > kUnityQ16 ?
                                       kUnityQ16 : gain_q16_;
     for (uint32_t i = 0u; i < count; i++) {
         const int64_t product = (int64_t)in[i] * applied_gain;

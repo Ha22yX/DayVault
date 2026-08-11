@@ -6,7 +6,6 @@ static const uint32_t kRate = 16000u;
 static const uint32_t kFrames = 128u;
 static int16_t input[kFrames];
 static int16_t output[kFrames];
-static int16_t expected[kFrames];
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -31,11 +30,6 @@ static void make_low_noise(uint32_t* state)
     for (uint32_t i = 0; i < kFrames; i++) {
         input[i] = (int16_t)(((int32_t)(xorshift32(state) & 0xffffu) - 32768) / 128);
     }
-}
-
-static int32_t abs_i32(int32_t value)
-{
-    return value < 0 ? -value : value;
 }
 
 static void process_blocks(SpeechLeveler* leveler, int16_t amplitude, bool speech,
@@ -132,23 +126,35 @@ void test_non_speech_release_toward_unity_is_gradual(void)
     TEST_ASSERT_TRUE(after_release >= 65536u);
 }
 
-void test_non_speech_low_noise_is_not_amplified_while_gain_releases(void)
+void test_brief_non_speech_gap_keeps_quiet_speech_gain(void)
 {
     SpeechLeveler leveler;
     leveler.reset(kRate);
     process_blocks(&leveler, 1000, true, 24u);
-    TEST_ASSERT_TRUE(leveler.stats().gain_q16 > 65536u);
+    const uint32_t speech_gain = leveler.stats().gain_q16;
+    TEST_ASSERT_TRUE(speech_gain > 65536u);
 
     uint32_t noise_state = 0x5a5a5a5au;
     make_low_noise(&noise_state);
-    for (uint32_t i = 0; i < kFrames; i++) expected[i] = input[i];
     leveler.process(input, output, kFrames, false);
 
-    TEST_ASSERT_TRUE(leveler.stats().gain_q16 > 65536u);
-    TEST_ASSERT_EQUAL_UINT32(65536u, leveler.stats().applied_gain_q16);
-    for (uint32_t i = 0; i < kFrames; i++) {
-        TEST_ASSERT_TRUE(abs_i32(output[i]) <= abs_i32(expected[i]) + 1);
+    TEST_ASSERT_TRUE(leveler.stats().gain_q16 < speech_gain);
+    TEST_ASSERT_TRUE(leveler.stats().applied_gain_q16 > 65536u);
+}
+
+void test_sustained_non_speech_eventually_returns_applied_gain_to_unity(void)
+{
+    SpeechLeveler leveler;
+    leveler.reset(kRate);
+    process_blocks(&leveler, 1000, true, 24u);
+
+    uint32_t noise_state = 0x5a5a5a5au;
+    for (uint32_t block = 0; block < 64u; ++block) {
+        make_low_noise(&noise_state);
+        leveler.process(input, output, kFrames, false);
     }
+
+    TEST_ASSERT_EQUAL_UINT32(65536u, leveler.stats().applied_gain_q16);
 }
 
 void test_bypass_is_bit_identical_and_reset_is_deterministic(void)
@@ -176,7 +182,8 @@ int main(void)
     RUN_TEST(test_loud_speech_reduces_gain_faster_than_quiet_speech_raises_it);
     RUN_TEST(test_full_scale_transients_are_limited_without_wrap);
     RUN_TEST(test_non_speech_release_toward_unity_is_gradual);
-    RUN_TEST(test_non_speech_low_noise_is_not_amplified_while_gain_releases);
+    RUN_TEST(test_brief_non_speech_gap_keeps_quiet_speech_gain);
+    RUN_TEST(test_sustained_non_speech_eventually_returns_applied_gain_to_unity);
     RUN_TEST(test_bypass_is_bit_identical_and_reset_is_deterministic);
     return UNITY_END();
 }
