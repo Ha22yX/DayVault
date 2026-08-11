@@ -56,6 +56,8 @@ class GeneratorContractTests(unittest.TestCase):
         self.assertEqual(contract["u2_rim_h"], 0.8)
         self.assertEqual(contract["clip_size"], (12.0, 30.0, 1.6))
         self.assertEqual(contract["clip_gap"], 1.0)
+        self.assertEqual(contract["clip_tip_clearance"], 0.6)
+        self.assertEqual(contract["clip_fixed_ends"], 1)
         self.assertEqual(contract["snap_recess_count"], 4)
 
 

@@ -78,6 +78,8 @@ def rear_shell_contract(config: EnclosureConfig = DEFAULT_CONFIG) -> Dict[str, o
         "u2_rim_h": 0.8,
         "clip_size": (config.clip_w, config.clip_length, config.clip_t),
         "clip_gap": config.clip_gap,
+        "clip_tip_clearance": round(config.clip_gap - config.clip_lip, 3),
+        "clip_fixed_ends": 1,
         "snap_recess_count": 4,
     }
 
@@ -521,13 +523,13 @@ def _clip_parts(config: EnclosureConfig) -> List[object]:
     )
     lower_lip = rounded_box(
         "ChestClip_RetentionLip",
-        (config.clip_w, 3.5, config.clip_gap + config.clip_lip),
+        (config.clip_w, 3.5, config.clip_t + config.clip_lip),
         (
             0.0,
             -13.2,
-            config.body_d + (config.clip_gap + config.clip_lip) / 2,
+            clip_center_z - config.clip_lip / 2,
         ),
-        1.0,
+        0.8,
         "Generated",
     )
     return [arm, root, lower_lip]
@@ -859,7 +861,7 @@ def build_all(output_root: str | Path) -> Dict[str, object]:
     _export_stl(
         rear,
         export_dir / "DayVault_RearShell_Clip.stl",
-        rotation=(0.0, -math.pi / 2.0, 0.0),
+        rotation=(-math.pi / 2.0, 0.0, 0.0),
     )
     _render_previews(export_dir, front, rear, references)
     bpy.ops.wm.save_as_mainfile(filepath=str(output_root / "DayVault_Enclosure.blend"))

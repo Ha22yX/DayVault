@@ -71,7 +71,7 @@ class EnclosureConfig:
     clip_length: float = 30.0
     clip_t: float = 1.6
     clip_gap: float = 1.0
-    clip_lip: float = 1.5
+    clip_lip: float = 0.4
 
 
 DEFAULT_CONFIG = EnclosureConfig()
@@ -122,5 +122,10 @@ def validate_config(config: EnclosureConfig) -> List[str]:
         errors.append("PCB exceeds right inner wall")
     if config.pcb_y + config.pcb_h > config.body_h - config.wall:
         errors.append("PCB exceeds bottom inner wall")
+
+    if config.clip_lip <= 0 or config.clip_lip >= config.clip_gap:
+        errors.append("clip retention lip must remain clear of rear shell")
+    elif config.clip_gap - config.clip_lip < 0.6:
+        errors.append("clip free-end clearance below 0.6 mm")
 
     return errors

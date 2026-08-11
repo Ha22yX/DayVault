@@ -46,6 +46,11 @@ class EnclosureConfigTests(unittest.TestCase):
         self.assertEqual(DEFAULT_CONFIG.body_d, 15.2)
         self.assertEqual(DEFAULT_CONFIG.clip_t, 1.6)
 
+    def test_clip_free_end_clears_rear_shell(self):
+        config = DEFAULT_CONFIG
+        self.assertEqual(config.clip_lip, 0.4)
+        self.assertGreaterEqual(config.clip_gap - config.clip_lip, 0.6)
+
 
 if __name__ == "__main__":
     unittest.main()

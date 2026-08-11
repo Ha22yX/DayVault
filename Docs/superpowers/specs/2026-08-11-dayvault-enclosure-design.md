@@ -170,14 +170,16 @@ U2 acoustic keep-out. Nominal clip geometry is:
 - free length from root: 30.0 mm;
 - flexible thickness: 1.6 mm;
 - initial clothing gap: 1.0 mm;
-- lower retention lip: 1.5 mm;
-- root fillet radius: 2.5 mm;
-- end radius: 3.0 mm.
+- lower retention-lip projection: 0.4 mm;
+- free-end clearance from rear shell: 0.6 mm;
+- root fillet radius: 1.2 mm;
+- arm/end rounding target: 1.4 mm.
 
-The clip bends away from the rear shell when attaching the device. Its lower end must not
-cover either microphone opening. Print-orientation tests must confirm that layer lines run
-along the clip length rather than across the flexible root. Local support beneath the clip
-is permitted and must be removable without thinning the flexible section.
+Only the upper root is fused to the rear shell. The lower retention lip is part of the
+clip arm but remains physically separated from the shell, forming a true one-ended
+cantilever. The clip bends away from the rear shell when attaching the device. Its lower
+end must not cover either microphone opening. Print-orientation tests must confirm that
+the clip grows from its fixed root toward its free end, without support trapped in the gap.
 
 ## 9. FDM Rules
 
@@ -190,11 +192,11 @@ is permitted and must be removable without thinning the flexible section.
 - No printed support may be trapped inside the acoustic channels or USB tunnel.
 
 The front cover prints with its outer face on the build plate. The rear-shell STL is
-pre-oriented on its plain left side wall, with the rear wall and clip standing vertically.
+pre-oriented on a narrow side wall, with the rear wall and clip standing vertically.
 This avoids bridging the full enclosure cavity and gives the clip root continuous
-longitudinal layers. Use an 8-10 mm brim, disable global supports, and add only a small
-local/tree support below the retention lip if the sliced preview requires it. Never place
-the rear shell open-side-down. PETG is the final-material baseline.
+layers that grow from the fixed root toward the free end. Use an 8-10 mm brim and disable
+global supports. Never place the rear shell open-side-down. PETG is the final-material
+baseline.
 
 ## 10. Deliverables
 

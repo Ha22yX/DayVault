@@ -19,6 +19,11 @@ Only three external openings are present:
 
 The microSD card, RESET, and BOOT controls require opening the enclosure.
 
+The integrated chest clip is a true one-ended cantilever. Its upper root is fused to the
+rear shell; the lower retention lip is free and keeps 0.6 mm clearance from the shell.
+
+![Clip free-end clearance](exports/clip_free_end_detail.png)
+
 ## Regenerating in Blender
 
 Open Blender's scripting workspace and run:
@@ -51,7 +56,7 @@ Reference objects are named `REF_*` and are excluded from STL export.
 - Top/bottom layers: 5
 - Infill: 25-35%
 - Brim: 8-10 mm on the rear shell
-- Supports: disabled by default; add only a small local/tree support below the retention lip
+- Supports: disabled by default
 - Elephant-foot compensation: 0.15-0.20 mm if available
 
 The exported STLs already have their intended print orientation:
@@ -59,12 +64,12 @@ The exported STLs already have their intended print orientation:
 ![Correct print orientation](exports/print_orientation.png)
 
 - Print the front cover with its flat outer face on the bed and the locating pin upward.
-- Print the rear shell on its plain left side wall. Its rear wall and clip stand vertically;
-  the STL is approximately 14.2 x 40 x 46 mm in this orientation.
+- Print the rear shell in its exported narrow-edge orientation. Its rear wall and clip
+  stand vertically; the STL is approximately 46 x 14.2 x 40 mm in this orientation.
 - Do not use the slicer's auto-orient feature on the rear shell and do not place its open
   cavity against the bed. That orientation creates a large unsupported bridge.
 - Inspect the sliced layers before printing. No support should fill the enclosure cavity,
-  acoustic paths, or USB-C opening.
+  clip gap, acoustic paths, or USB-C opening.
 
 Before final assembly, check PCB edge fit, battery clearance, USB-C plug insertion, both
 microphone paths, the four snap detents, and repeated clip flexing. Do not force or rigidly
