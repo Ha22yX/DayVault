@@ -478,14 +478,15 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ helpers
 
-    def _sort_key(self, name: str):
+    @staticmethod
+    def _sort_key(name: str):
         """Sort key: timestamp recordings (newest first), then legacy seq files, then others."""
         meta = proto.parse_rec_name(name)
         if meta and meta["kind"] == "timestamp":
-            return (1, meta.get("timestamp", ""), name)
+            return (1, meta.get("timestamp", ""), meta.get("collision", 0), name.casefold())
         if meta and meta["kind"] == "seq":
-            return (0, "", name)
-        return (-1, "", name)
+            return (0, "", meta.get("seq", 0), name.casefold())
+        return (-1, "", 0, name.casefold())
 
     def _display_time(self, name: str, serial: str) -> str:
         meta = proto.parse_rec_name(name)
