@@ -1,194 +1,152 @@
 <h1 align="center">DayVault</h1>
 
 <p align="center">
-  A wearable microphone module and Windows sync app for turning everyday audio into a local, searchable life archive.
+  A compact wearable recorder that captures everyday speech as Ogg Opus files and transfers them to a local life archive.
 </p>
 
 <p align="center">
-  <a href="README.zh-CN.md">简体中文</a> &middot;
-  <a href="#quickstart">Quickstart</a> &middot;
-  <a href="#project-gallery">Gallery</a> &middot;
-  <a href="tools/dayvault_sync/README.md">Sync app</a> &middot;
-  <a href="Docs/README.md">Hardware docs</a> &middot;
-  <a href="Docs/Serial-Command-Reference.md">Serial protocol</a>
+  <a href="README.zh-CN.md">简体中文</a> ·
+  <a href="https://github.com/Ha22yX/DayVault/releases/latest">Latest release</a> ·
+  <a href="Docs/README.md">Hardware docs</a> ·
+  <a href="tools/dayvault_sync/README.md">Sync app</a> ·
+  <a href="Docs/Serial-Command-Reference.md">Protocol</a>
 </p>
 
 <p align="center">
-  <img alt="Status" src="https://img.shields.io/badge/status-active%20prototype-D97706?style=for-the-badge" />
-  <img alt="MCU" src="https://img.shields.io/badge/MCU-STM32L452-205A4B?style=for-the-badge&logo=stmicroelectronics&logoColor=white" />
-  <img alt="Firmware" src="https://img.shields.io/badge/firmware-PlatformIO-6B7FD7?style=for-the-badge" />
-  <img alt="Desktop app" src="https://img.shields.io/badge/desktop-PySide6-2563EB?style=for-the-badge&logo=qt&logoColor=white" />
-  <img alt="Audio" src="https://img.shields.io/badge/audio-Ogg%20Opus-5F7F73?style=for-the-badge" />
+  <img alt="Release" src="https://img.shields.io/github/v/release/Ha22yX/DayVault?style=flat-square&color=2563EB" />
+  <img alt="MCU" src="https://img.shields.io/badge/MCU-STM32L452-205A4B?style=flat-square&logo=stmicroelectronics&logoColor=white" />
+  <img alt="Audio" src="https://img.shields.io/badge/audio-Ogg%20Opus-5F7F73?style=flat-square" />
+  <img alt="Firmware" src="https://img.shields.io/badge/firmware-PlatformIO-F5822A?style=flat-square" />
+  <img alt="Desktop" src="https://img.shields.io/badge/desktop-PySide6-41CD52?style=flat-square&logo=qt&logoColor=white" />
 </p>
-
-<p align="center">
-  <img src=".github/assets/readme-hero.svg" alt="DayVault hardware and sync workflow overview" />
-</p>
-
-## Project Gallery
 
 <table>
   <tr>
     <td width="50%" align="center">
-      <img src=".github/assets/dayvault-sync-app.png" alt="DayVault Sync Windows app downloading audio from the microphone module" />
+      <img src=".github/assets/dayvault-mic-module.jpg" alt="Assembled DayVault recorder prototype with PCB, battery, and printed enclosure" />
       <br />
-      <strong>Windows sync app.</strong> Detects the module over USB and downloads recordings through a resumable, CRC-verified WinUSB path.
+      <strong>Working hardware prototype</strong><br />
+      STM32 board, battery, USB-C, microSD, and a lightweight printed enclosure.
     </td>
     <td width="50%" align="center">
-      <img src=".github/assets/dayvault-mic-module.jpg" alt="DayVault microphone module prototype connected over USB-C" />
+      <img src=".github/assets/dayvault-sync-app.png" alt="DayVault Sync showing recordings, battery voltage, and charging state" />
       <br />
-      <strong>Microphone module.</strong> A compact board and battery prototype used for local audio capture experiments.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center">
-      <img src=".github/assets/dayvault-schematic.png" alt="DayVault schematic with STM32L452, PDM microphones, microSD, USB-C, charger, RTC, and power circuits" />
-      <br />
-      <strong>Schematic.</strong> The current EasyEDA electrical design for the recorder module.
-    </td>
-    <td width="50%" align="center">
-      <img src=".github/assets/dayvault-pcb-layout.png" alt="DayVault PCB layout in EasyEDA" />
-      <br />
-      <strong>PCB layout.</strong> The board layout snapshot used for review and bring-up planning.
+      <strong>Windows sync app</strong><br />
+      Newest-first recordings, readable sizes, duration, battery level, and charging state.
     </td>
   </tr>
 </table>
 
-## Why This Exists
+## What DayVault Does
 
-I started DayVault because I have been learning PCB design and wanted to build something personal with it: an all-day recording device that can capture every sentence I say and preserve each day as a life archive.
+DayVault is a complete personal audio-recording chain:
 
-The imagined workflow is simple: carry the microphone module during the day, plug it into the computer at night, let the Windows sync app pull the new `.OPUS` recordings into a local folder, and later use speech-to-text plus AI summaries to prepare a written recap of the day.
+1. Two PDM microphones capture speech from opposite sides of a chest-worn device.
+2. STM32L452 firmware adaptively fuses both channels into one 16 kHz mono stream.
+3. Audio is encoded directly to Ogg Opus at a target 24 kbit/s and stored on microSD.
+4. The Windows app detects the device over USB and synchronizes recordings into a folder for transcription and archiving.
 
-The repository keeps the full chain visible:
+No parallel WAV or raw PCM copy is kept during normal recording. At 24 kbit/s, continuous audio is roughly 260 MB per day before filesystem overhead.
 
-| Layer | What is here |
+## Why I Built It
+
+I wanted a small device that could stay with me throughout the day and preserve conversations and moments I would otherwise forget. At night, I can transfer the recordings, turn them into text, and keep a searchable record of what happened.
+
+## Current Capabilities
+
+| Area | Implemented behavior |
 | --- | --- |
-| Hardware | EasyEDA project, exported netlist, schematic/PCB snapshots, pin maps, BOM, and hardware docs. |
-| Firmware | PlatformIO STM32 firmware sources and tests for recording, storage, USB protocol, Ogg Opus writing, and device behavior. |
-| Desktop sync | PySide6 Windows app with WinUSB bulk export, CRC32 validation, resume, and legacy CDC fallback. |
-| Protocol docs | Serial command reference for listing, downloading, time sync, DFU, battery diagnostics, and file management. |
+| Recording | Dual SPH0655 PDM capture, adaptive fusion, 16 kHz mono Ogg Opus, 20 ms frames, 24 kbit/s target. |
+| Storage | Timestamped recordings on microSD, safe finalization, resumable downloads, CRC32 verification, and circular cleanup support. |
+| USB | USB-C CDC control, WinUSB bulk transfer, time synchronization, charging detection, and software or ROM DFU paths. |
+| Power | Battery measurement on PA0, low-voltage protection, STOP2 sleep, RTC wake checks, and USB-aware recovery. |
+| Desktop | Automatic sync, newest-first list, readable sizes, start time, duration, battery and charging display, open, locate, save-as, and confirmed deletion. |
+| Enclosure | Two-part FDM-printable chest-clip enclosure with microphone and USB openings. |
 
-## Quickstart
+## Hardware
 
-### Run The Windows Sync App
-
-```powershell
-cd tools/dayvault_sync
-pip install -r requirements.txt
-python main.py
-```
-
-Build a single executable:
-
-```bat
-cd tools\dayvault_sync
-build_exe.bat
-```
-
-The packaged app is written to `tools\dayvault_sync\dist\DayVaultSync.exe`.
-
-### Build Firmware
-
-```powershell
-cd firmware
-platformio run
-```
-
-Run firmware tests when PlatformIO environments are available:
-
-```powershell
-cd firmware
-platformio test
-```
-
-## Sync App Behavior
-
-- Watches USB serial ports for the DayVault device VID/PID.
-- Starts sync automatically when a device is inserted.
-- Sends host time and local timezone offset to the device on each sync.
-- Lists remote recordings and downloads files that are new or whose size changed.
-- Writes files to `<sync_folder>\<device_serial>\`.
-- Uses `.part` temporary files and retries failed downloads up to three times.
-- Prefers `BULK2` WinUSB export, then falls back to `GET2` and legacy `DL2`.
-- Streams directly to disk and validates the device/host CRC before finalizing a file.
-- Downloads current `.OPUS` recordings and remains compatible with legacy `.WAV` files.
-- Keeps state in `%APPDATA%\DayVault\state\<serial>.json`.
-- Keeps logs in `%APPDATA%\DayVault\logs\app.log`.
-- Minimizes to the system tray instead of exiting when the tray is available.
-
-## Audio Recording
-
-Production recordings are standard Ogg Opus `.OPUS` files: the two microphones are adaptively fused to one mono stream at exactly 16 kHz, then encoded in 20 ms frames at a target 24 kbit/s constrained VBR restricted-SILK setting. Plan for about 265 MB per day. No parallel WAV or PCM original is kept; legacy `.WAV` recordings remain downloadable and removable by circular storage management.
-
-For file naming, clean-stop behavior, power-loss limits, and `OPUSSTAT`, see [Opus recording](Docs/09-Opus-Recording.md).
-
-## Hardware At A Glance
-
-| Subsystem | Selected part | Role |
+| Subsystem | Part | Role |
 | --- | --- | --- |
-| Main controller | STM32L452RCT6 | PDM capture, storage, USB, RTC, and power-state control. |
-| Microphones | 2 x SPH0655LM4H-1-8 | Digital PDM speech capture. |
-| Storage | microSD over SPI1 | Local Ogg Opus `.OPUS` recording storage; legacy `.WAV` remains exportable. |
-| USB | USB-C full-speed device | Sync, serial protocol, charging input, and DFU path. |
-| Power | Protected single-cell LiPo + TPS63031 | Wearable power source and 3.3 V rail. |
-| Charging | MCP73831 | USB-powered Li-ion charging. |
-| Timekeeping | STM32 RTC + 32.768 kHz crystal | Timestamped recording names. |
+| MCU | STM32L452RCT6 | Audio capture, Opus pipeline, storage, USB, RTC, and power management. |
+| Microphones | 2 × SPH0655LM4H-1-8 | Opposing digital PDM speech capture. |
+| Storage | microSD over SPI1 | Local Ogg Opus recording storage. |
+| USB | USB-C Full Speed | Sync, control protocol, charging input, and DFU. |
+| 3.3 V rail | TPS63031 | Buck-boost supply from the single-cell battery. |
+| Charger | MCP73831T-2ACI/OT | 4.20 V single-cell Li-ion/LiPo charging. |
+| Timekeeping | STM32 RTC + 32.768 kHz crystal | Stable timestamps and low-power wake checks. |
 
-## System Architecture
+<p align="center">
+  <img width="49%" src=".github/assets/dayvault-schematic.png" alt="DayVault schematic" />
+  <img width="49%" src=".github/assets/dayvault-pcb-layout.png" alt="DayVault PCB layout" />
+</p>
 
-```mermaid
-flowchart LR
-    Speech["Conversation"] --> Mic["PDM microphones"]
-    Mic --> MCU["STM32L452 firmware"]
-    MCU --> SD["microSD Ogg Opus files"]
-    USB["USB-C CDC / WinUSB"] --> Host["DayVault Sync app"]
-    Host --> Folder["Per-device sync folder"]
-    Folder --> Archive["Transcription / life archive"]
-    Host --> MCU
-```
+## Download
+
+The [latest GitHub Release](https://github.com/Ha22yX/DayVault/releases/latest) contains:
+
+- <code>DayVaultSync-v1.1.0.exe</code> - packaged Windows synchronization app.
+- <code>DayVault-firmware-v1.1.0.bin</code> - STM32L452 firmware image.
+- SHA-256 checksums in the release notes.
+
+Firmware updates must target DFU alternate interface 0 at <code>0x08000000</code>. Never write alternate interface 1 or the option-byte region at <code>0x1FFF7800</code>.
+
+## Development
+
+Run the desktop app from source:
+
+    cd tools/dayvault_sync
+    pip install -r requirements.txt
+    python main.py
+
+Build the Windows executable:
+
+    cd tools\dayvault_sync
+    build_exe.bat
+
+Build the firmware:
+
+    cd firmware
+    platformio run -e dayvault
+
+Run the maintained tests:
+
+    cd tools/dayvault_sync
+    python -m pytest -q
+
+    cd ../../
+    python -m pytest -q Mechanical/tests
 
 ## Repository Map
 
-```text
-DayVault/
-|-- EDA/                         EasyEDA project and exported netlist
-|-- Docs/                        Hardware and protocol documentation
-|-- firmware/                    PlatformIO STM32 firmware
-|-- tools/dayvault_sync/          Windows desktop sync app
-|-- README.md
-`-- README.zh-CN.md
-```
+| Path | Contents |
+| --- | --- |
+| <code>EDA/</code> | EasyEDA project and exported hardware data. |
+| <code>Docs/</code> | Hardware, pinout, battery, recording, and serial protocol documentation. |
+| <code>firmware/</code> | PlatformIO STM32 firmware and native tests. |
+| <code>Mechanical/</code> | Blender enclosure source, generator, tests, STL files, and renders. |
+| <code>tools/dayvault_sync/</code> | PySide6 Windows synchronization app. |
 
-## Useful Entry Points
+## Documentation
 
-- [Sync app documentation](tools/dayvault_sync/README.md)
-- [Hardware documentation index](Docs/README.md)
-- [Serial command reference](Docs/Serial-Command-Reference.md)
-- [Opus recording](Docs/09-Opus-Recording.md)
-- [High-speed transfer design and measurements](Docs/High-Speed-Transfer.md)
 - [Hardware overview](Docs/01-Hardware-Overview.md)
 - [MCU pinout](Docs/02-MCU-Pinout.md)
+- [Component pinout](Docs/03-Component-Pinout.md)
 - [BOM](Docs/07-BOM.md)
-- [Contributing guide](CONTRIBUTING.md)
+- [Opus recording](Docs/09-Opus-Recording.md)
+- [High-speed transfer](Docs/High-Speed-Transfer.md)
+- [Serial command reference](Docs/Serial-Command-Reference.md)
+- [Mechanical enclosure](Mechanical/README.md)
 
-## Current Status
+## Project Status
 
-DayVault is an active prototype, not a finished consumer product. The hardware, firmware, and sync tool are all evolving together. Treat this repository as a development record and working prototype source, not as a manufacturing release.
-
-Known practical notes:
-
-- Recording and sync behavior should be validated with real devices and logs.
-- Firmware, battery thresholds, storage behavior, acoustic quality, and long-duration reliability still need measured bring-up evidence.
-- The desktop sync tool is Windows-focused and depends on Python, PySide6, pyserial, PyUSB, and libusb when run from source.
-- No open-source license has been selected yet.
+DayVault is an active hardware prototype. Recording, Opus storage, USB synchronization, battery reporting, low-voltage sleep, and the printed enclosure are working on the current board. Long-duration reliability, acoustic tuning across more wearing conditions, charging thermals, and enclosure revisions still need continued real-world testing.
 
 ## Privacy And Safety
 
-DayVault is intended for personal recording. Recording other people may require notice or consent depending on local law and context. Protect raw audio and transcripts with strong access controls and decide retention rules before collecting sensitive conversations.
+Recording other people may require notice or consent depending on local law and context. Protect recordings and transcripts as sensitive personal data.
 
-This is an unvalidated wearable electronics prototype with a Li-ion battery and charger. Use protected cells, verify polarity, provide strain relief, test charging temperature, and do not leave early hardware unattended while charging or recording.
+This is a wearable Li-ion prototype. Use a protected cell, verify polarity, test charging temperature, provide strain relief, and do not leave early hardware unattended while charging.
 
 ## License
 
-No open-source license has been selected yet. Unless a license is added later, all rights remain with the repository owner; published design and source files may be inspected but are not automatically licensed for reuse, modification, or redistribution.
+No open-source license has been selected. Unless a license is added later, all rights remain with the repository owner.
