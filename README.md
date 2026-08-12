@@ -84,8 +84,8 @@ I wanted a small device that could stay with me throughout the day and preserve 
 
 The [latest GitHub Release](https://github.com/Ha22yX/DayVault/releases/latest) contains:
 
-- <code>DayVaultSync-v1.1.0.exe</code> - packaged Windows synchronization app.
-- <code>DayVault-firmware-v1.1.0.bin</code> - STM32L452 firmware image.
+- <code>DayVaultSync-v1.1.1.exe</code> - packaged Windows synchronization app.
+- <code>DayVault-firmware-v1.1.1.bin</code> - STM32L452 firmware image.
 - SHA-256 checksums in the release notes.
 
 Firmware updates must target DFU alternate interface 0 at <code>0x08000000</code>. Never write alternate interface 1 or the option-byte region at <code>0x1FFF7800</code>.

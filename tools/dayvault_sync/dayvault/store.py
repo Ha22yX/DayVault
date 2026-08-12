@@ -22,6 +22,7 @@ def load_config() -> dict:
     default = {
         "sync_folder": str(Path.home() / "Documents" / "DayVault"),
         "poll_interval_ms": 1500,
+        "battery_poll_interval_ms": 20_000,
         "autostart": False,
         "language": "en",
     }

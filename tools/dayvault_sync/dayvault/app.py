@@ -250,6 +250,31 @@ class DeleteThread(QThread):
                 conn.close()
 
 
+class StatusThread(QThread):
+    """Read fresh battery and USB status without blocking the UI thread."""
+
+    device_status = Signal(str, dict)  # serial, battery/USB status
+
+    def __init__(self, port: str, serial: str, parent: QObject | None = None):
+        super().__init__(parent)
+        self._port = port
+        self._serial = serial
+
+    def run(self):
+        conn = None
+        try:
+            conn = dio.DeviceConnection(self._port)
+            info = proto.parse_device_info(conn.send_command("INFO", timeout_s=5.0))
+            if info is not None:
+                self.device_status.emit(self._serial, info)
+        except Exception as error:
+            log.warning("periodic device status unavailable for %s: %s",
+                        self._serial, error)
+        finally:
+            if conn is not None:
+                conn.close()
+
+
 class DeviceMonitor(QObject):
     """Polls COM ports for DayVault boards and drives one SyncThread per device."""
 
@@ -272,10 +297,15 @@ class DeviceMonitor(QObject):
         else:
             self.config = store.load_config()
         self._known: dict[str, str] = {}           # serial -> port
-        self._threads: dict[str, SyncThread] = {}  # active sync threads by serial
+        self._threads: dict[str, QThread] = {}     # one active device operation per serial
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.poll)
         self._timer.start(int(self.config.get("poll_interval_ms", 1500)))
+        self._status_timer = QTimer(self)
+        self._status_timer.timeout.connect(self.poll_status)
+        self._status_timer.start(
+            int(self.config.get("battery_poll_interval_ms", 20_000))
+        )
 
     def poll(self):
         try:
@@ -328,6 +358,21 @@ class DeviceMonitor(QObject):
             if serial is None or ser == serial:
                 self.start_sync(port, ser)
 
+    def poll_status(self):
+        """Refresh battery state only when the device port is otherwise idle."""
+        for serial, port in list(self._known.items()):
+            if serial not in self._threads:
+                self.start_status(port, serial)
+
+    def start_status(self, port: str, serial: str):
+        if serial in self._threads:
+            return
+        thread = StatusThread(port, serial, parent=self)
+        thread.device_status.connect(self.device_status)
+        self._threads[serial] = thread
+        thread.finished.connect(lambda s=serial: self._threads.pop(s, None))
+        thread.start()
+
     def delete_file(self, serial: str, name: str) -> bool:
         port = self._known.get(serial)
         if port is None:
@@ -347,6 +392,7 @@ class DeviceMonitor(QObject):
 
     def stop(self):
         self._timer.stop()
+        self._status_timer.stop()
         for t in list(self._threads.values()):
             t.requestInterruption()
         for serial, t in list(self._threads.items()):

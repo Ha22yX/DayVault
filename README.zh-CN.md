@@ -84,8 +84,8 @@ DayVault 已经形成一条完整的个人录音链路：
 
 [最新 GitHub Release](https://github.com/Ha22yX/DayVault/releases/latest)包含：
 
-- <code>DayVaultSync-v1.1.0.exe</code>：打包好的 Windows 同步程序。
-- <code>DayVault-firmware-v1.1.0.bin</code>：STM32L452 固件。
+- <code>DayVaultSync-v1.1.1.exe</code>：打包好的 Windows 同步程序。
+- <code>DayVault-firmware-v1.1.1.bin</code>：STM32L452 固件。
 - Release 说明中的 SHA-256 校验值。
 
 固件更新必须写入 DFU 的备用接口 0、地址 <code>0x08000000</code>。严禁写入备用接口 1 或 <code>0x1FFF7800</code> 选项字节区域。
