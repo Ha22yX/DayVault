@@ -8,6 +8,8 @@ _TIMESTAMP_RE = re.compile(
     r"(?:_(?:(\d+)h)?(\d+)m(\d+)s)?\.(OPUS|WAV)$", re.IGNORECASE
 )
 _SEQ_RE = re.compile(r"^REC(\d{3})\.(OPUS|WAV)$", re.IGNORECASE)
+_INFO_BATTERY_RE = re.compile(r"\bbat=(\d+)mV\b.*?\bpct=(\d+)\b")
+_INFO_USB_RE = re.compile(r"\busb_detect=(\d+)\b")
 
 
 def parse_list_output(text: str) -> list[tuple[str, int]]:
@@ -54,8 +56,45 @@ def parse_rec_name(name: str) -> dict | None:
     return None
 
 
+def parse_device_info(text: str) -> dict | None:
+    """Extract battery and USB charging state from an INFO response."""
+    battery = _INFO_BATTERY_RE.search(text)
+    if battery is None:
+        return None
+    usb = _INFO_USB_RE.search(text)
+    return {
+        "millivolts": int(battery.group(1)),
+        "percent": max(0, min(100, int(battery.group(2)))),
+        "usb_connected": bool(int(usb.group(1))) if usb else False,
+    }
+
+
 def local_tz_offset_minutes(now: datetime | None = None) -> int:
     """Local UTC offset in minutes (e.g. +480 for UTC+8)."""
     now = now or datetime.now().astimezone()
     off = now.utcoffset() or timedelta(0)
     return int(off.total_seconds() // 60)
+
+def format_file_size(size: int) -> str:
+    """Format a byte count using binary 1024-based display units."""
+    value = float(max(0, size))
+    units = ("B", "KB", "MB", "GB", "TB")
+    unit_index = 0
+    while value >= 1024.0 and unit_index < len(units) - 1:
+        value /= 1024.0
+        unit_index += 1
+    if unit_index == 0:
+        return f"{int(value):,} B"
+    number = f"{value:.2f}".rstrip("0").rstrip(".")
+    return f"{number} {units[unit_index]}"
+
+
+def format_duration(seconds: int | None) -> str:
+    """Format recording duration as MM:SS or H:MM:SS."""
+    if seconds is None or seconds < 0:
+        return "\u2014"
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"

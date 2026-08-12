@@ -1,4 +1,11 @@
-from dayvault.proto import parse_list_output, parse_rec_name, local_tz_offset_minutes
+from dayvault.proto import (
+    format_duration,
+    format_file_size,
+    local_tz_offset_minutes,
+    parse_list_output,
+    parse_device_info,
+    parse_rec_name,
+)
 from datetime import datetime, timedelta, timezone
 
 
@@ -8,6 +15,19 @@ def test_parse_list_output():
         ("REC062.WAV", 158476),
         ("REC-20260809-1925_0m05s.WAV", 242880),
     ]
+
+
+def test_parse_device_info_with_usb_charging_state():
+    text = "INFO usb_detect=1 boot=0 bat=4130mV pct=91 tz=480"
+    assert parse_device_info(text) == {
+        "millivolts": 4130,
+        "percent": 91,
+        "usb_connected": True,
+    }
+
+
+def test_parse_device_info_without_battery_is_none():
+    assert parse_device_info("INFO usb_detect=0 boot=0") is None
 
 
 def test_parse_rec_name_timestamp_duration():
@@ -87,3 +107,19 @@ def test_parse_rec_name_non_rec():
 def test_local_tz_offset_minutes_utc8():
     now = datetime(2026, 8, 10, 12, 0, tzinfo=timezone(timedelta(hours=8)))
     assert local_tz_offset_minutes(now) == 480
+
+
+def test_format_file_size_uses_1024_based_units():
+    assert format_file_size(0) == "0 B"
+    assert format_file_size(1023) == "1,023 B"
+    assert format_file_size(1024) == "1 KB"
+    assert format_file_size(3374) == "3.29 KB"
+    assert format_file_size(34_034_119) == "32.46 MB"
+    assert format_file_size(1024**3) == "1 GB"
+
+
+def test_format_recording_duration():
+    assert format_duration(None) == "\u2014"
+    assert format_duration(1) == "00:01"
+    assert format_duration(332) == "05:32"
+    assert format_duration(3723) == "1:02:03"

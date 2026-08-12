@@ -1,9 +1,12 @@
+import inspect
 import unittest
 
 from Mechanical.dayvault_enclosure import (
     EXTERNAL_OPENINGS,
+    MIRROR_YZ,
     PRINT_OBJECTS,
     REQUIRED_OBJECTS,
+    build_all,
     front_cover_contract,
     rear_shell_contract,
 )
@@ -12,6 +15,10 @@ from Mechanical.dayvault_enclosure import (
 class GeneratorContractTests(unittest.TestCase):
     def test_only_microphones_and_usb_are_externally_open(self):
         self.assertEqual(EXTERNAL_OPENINGS, ("U1", "U2", "USB_C"))
+
+    def test_model_is_mirrored_across_yz_plane(self):
+        self.assertTrue(MIRROR_YZ)
+        self.assertIn("references.values()", inspect.getsource(build_all))
 
     def test_required_objects_are_declared(self):
         self.assertEqual(
@@ -41,6 +48,8 @@ class GeneratorContractTests(unittest.TestCase):
         self.assertEqual(contract["outer_size"], (46.0, 40.0, 3.5))
         self.assertEqual(contract["wall"], 1.2)
         self.assertEqual(contract["lip_depth"], 2.3)
+        self.assertEqual(contract["lip_wall"], 1.6)
+        self.assertEqual(contract["lip_overlap"], 0.6)
         self.assertEqual(contract["locator_d"], 3.0)
         self.assertEqual(contract["u1"], (10.667, 29.305))
         self.assertEqual(contract["u1_external_d"], 2.5)
@@ -54,11 +63,13 @@ class GeneratorContractTests(unittest.TestCase):
         self.assertEqual(contract["battery_rect"], (2.0, 8.0, 44.0, 38.0))
         self.assertEqual(contract["u2"], (35.534, 4.617))
         self.assertEqual(contract["u2_rim_h"], 0.8)
-        self.assertEqual(contract["clip_size"], (12.0, 30.0, 1.6))
-        self.assertEqual(contract["clip_gap"], 1.0)
-        self.assertEqual(contract["clip_tip_clearance"], 0.6)
+        self.assertEqual(contract["clip_size"], (12.0, 30.0, 1.8))
+        self.assertEqual(contract["clip_gap"], 0.9)
+        self.assertEqual(contract["clip_tip_gap"], 0.65)
+        self.assertEqual(contract["clip_tip_clearance"], 0.45)
         self.assertEqual(contract["clip_fixed_ends"], 1)
         self.assertEqual(contract["snap_recess_count"], 4)
+        self.assertEqual(contract["usb_opening"], (10.6, 4.2, 6.5))
 
 
 if __name__ == "__main__":

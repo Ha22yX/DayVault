@@ -17,6 +17,7 @@ OPUS_LIBRARY = REPO / "firmware" / "lib" / "opus" / "library.json"
 WINUSB_DEVICE = REPO / "firmware" / "src" / "WinUsbDevice.cpp"
 PDM_CAPTURE = REPO / "firmware" / "src" / "PdmCapture.cpp"
 PDM_CAPTURE_HEADER = REPO / "firmware" / "src" / "PdmCapture.h"
+BATTERY = REPO / "firmware" / "src" / "Battery.cpp"
 
 
 def test_linker_exposes_all_stm32l452_sram():
@@ -40,6 +41,30 @@ def test_linker_has_dedicated_noload_ram2_section():
 def test_platformio_board_reports_total_sram():
     board = json.loads(BOARD.read_text(encoding="utf-8"))
     assert board["upload"]["maximum_ram_size"] == 160 * 1024
+
+
+def test_battery_adc_reads_pa0_through_adc1_in5_without_empirical_gain():
+    text = BATTERY.read_text(encoding="utf-8")
+
+    assert "#define BAT_ADC_CHANNEL ADC_CHANNEL_5" in text
+    assert "read_adc_settled(BAT_ADC_CHANNEL" in text
+    assert "read_adc_settled(ADC_CHANNEL_0" not in text
+    assert "BAT_GAIN" not in text
+
+
+def test_low_battery_policy_finalizes_then_uses_stop2_with_hysteresis():
+    text = MAIN.read_text(encoding="utf-8")
+    sleep = text[text.index("static void low_battery_enter_stop") :]
+    sleep = sleep[: sleep.index("void setup()")]
+
+    assert "#define BAT_SLEEP_MV     3200u" in text
+    assert "#define BAT_RESUME_MV    3550u" in text
+    assert "if (rec_active) rec_stop()" in sleep
+    assert "bat_suspend()" in sleep
+    assert "dt_set_wake(15)" in sleep
+    assert "HAL_PWREx_EnterSTOP2Mode" in sleep
+    assert "IWDG->RLR = 4095" in text
+    assert "if (!low_power_latched) rec_start()" in text
 
 
 def test_release_build_uses_o2_for_project_sources_and_opus():
@@ -270,3 +295,27 @@ def test_winusb_bulk_in_uses_reliable_single_pma_buffer():
 
     assert in_config is not None
     assert in_config.group(1) == "PCD_SNG_BUF"
+
+def test_adc_stays_off_during_detached_periodic_wakes():
+    battery = BATTERY.read_text(encoding="utf-8")
+    main = MAIN.read_text(encoding="utf-8")
+
+    assert battery.count("static bool adc_ready = false;") == 1
+    assert "if (adc_ready) return;" in battery
+    assert "if (!adc_ready) return;" in battery
+    assert "if (!adc_ready) return 0u;" in battery
+    assert "if (digitalRead(PIN_USB_DETECT) == HIGH) {\n        bat_init();" in main
+
+
+def test_named_recording_delete_is_restricted_and_reports_result():
+    main = MAIN.read_text(encoding="utf-8")
+    fs = FS.read_text(encoding="utf-8")
+
+    assert 'strncmp(line, "DELETE ", 7)' in main
+    assert "fs_delete_recording" in main
+    assert 'Serial.print("DELETE OK name=")' in main
+    assert 'Serial.print("DELETE FAIL result=")' in main
+    assert "is_recording_basename" in fs
+    assert "FR_INVALID_NAME" in fs
+    assert "active_basename" in fs
+    assert "f_unlink(path)" in fs

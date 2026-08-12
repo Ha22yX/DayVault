@@ -169,6 +169,35 @@ static int fs_delete_oldest_candidates(const char* skip, int limit)
     return deleted;
 }
 
+static bool is_recording_basename(const char* name)
+{
+    if (name == NULL || strncmp(name, REC_DIR_STR, strlen(REC_DIR_STR)) != 0) {
+        return false;
+    }
+    const size_t length = strlen(name);
+    if (length == 0 || length >= sizeof(((rec_file_t*)0)->name)) return false;
+    for (size_t i = 0; i < length; i++) {
+        const char c = name[i];
+        const bool safe = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                          (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.';
+        if (!safe) return false;
+    }
+    const char* dot = strrchr(name, '.');
+    return dot != NULL && is_recording_extension(dot + 1);
+}
+
+int fs_delete_recording(const char* basename, const char* active_basename)
+{
+    if (!is_recording_basename(basename)) return (int)FR_INVALID_NAME;
+    if (active_basename != NULL && strcmp(basename, active_basename) == 0) {
+        return (int)FR_DENIED;
+    }
+    if (!fs_mount()) return (int)FR_NOT_READY;
+    char path[44];
+    snprintf(path, sizeof(path), "0:/%s", basename);
+    return (int)f_unlink(path);
+}
+
 int fs_delete_oldest(const char* skip) { return fs_delete_oldest_candidates(skip, 1); }
 
 int fs_make_space(uint64_t want_free, const char* skip)

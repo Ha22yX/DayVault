@@ -20,14 +20,16 @@ from Mechanical.enclosure_config import (  # noqa: E402
 try:
     import bpy
     import bmesh
-    from mathutils import Vector
+    from mathutils import Matrix, Vector
 except ImportError:
     bpy = None
     bmesh = None
+    Matrix = None
     Vector = None
 
 
 PRINT_OBJECTS = ("DV_FrontCover", "DV_RearShell_Clip")
+MIRROR_YZ = True
 EXTERNAL_OPENINGS = ("U1", "U2", "USB_C")
 REQUIRED_OBJECTS = (
     "REF_PCB_30x30",
@@ -52,6 +54,8 @@ def front_cover_contract(config: EnclosureConfig = DEFAULT_CONFIG) -> Dict[str, 
         ),
         "wall": config.wall,
         "lip_depth": config.front_lip_depth,
+        "lip_wall": config.front_lip_wall,
+        "lip_overlap": config.front_lip_overlap,
         "locator_d": config.locator_d,
         "u1": tuple(config.u1_case),
         "u1_external_d": config.acoustic_external_d,
@@ -78,9 +82,15 @@ def rear_shell_contract(config: EnclosureConfig = DEFAULT_CONFIG) -> Dict[str, o
         "u2_rim_h": 0.8,
         "clip_size": (config.clip_w, config.clip_length, config.clip_t),
         "clip_gap": config.clip_gap,
-        "clip_tip_clearance": round(config.clip_gap - config.clip_lip, 3),
+        "clip_tip_gap": config.clip_tip_gap,
+        "clip_tip_clearance": round(config.clip_tip_gap - config.clip_lip, 3),
         "clip_fixed_ends": 1,
         "snap_recess_count": 4,
+        "usb_opening": (
+            config.usb_opening_w,
+            config.usb_opening_h,
+            config.usb_opening_z,
+        ),
     }
 
 
@@ -344,9 +354,9 @@ def _cut_edge_openings(part, config: EnclosureConfig) -> None:
     usb_x, _ = case_xy_to_blender(config.usb_case, config)
     usb = rounded_box(
         "CUT_USB_Tunnel",
-        (config.usb_opening_w, 10.0, 7.0),
-        (usb_x, -config.body_h / 2, 4.6),
-        0.8,
+        (config.usb_opening_w, 10.0, config.usb_opening_h),
+        (usb_x, -config.body_h / 2, config.usb_opening_z),
+        0.65,
         "Cutters",
     )
     boolean_apply(part, usb)
@@ -398,16 +408,17 @@ def build_front_cover(config: EnclosureConfig = DEFAULT_CONFIG):
 
     lip_outer_w = config.body_w - 2 * (config.wall + config.mating_clearance)
     lip_outer_h = config.body_h - 2 * (config.wall + config.mating_clearance)
-    lip_wall = 1.2
+    lip_wall = config.front_lip_wall
+    lip_height = config.front_lip_depth + config.front_lip_overlap
     lip = ring_box(
         "Front_RegistrationLip",
-        (lip_outer_w, lip_outer_h, config.front_lip_depth),
+        (lip_outer_w, lip_outer_h, lip_height),
         (
             lip_outer_w - 2 * lip_wall,
             lip_outer_h - 2 * lip_wall,
-            config.front_lip_depth + 0.2,
+            lip_height + 0.2,
         ),
-        (0.0, 0.0, config.front_plate_t + config.front_lip_depth / 2),
+        (0.0, 0.0, config.front_plate_t + config.front_lip_depth / 2 - config.front_lip_overlap / 2),
         max(0.8, config.corner_r - config.wall - config.mating_clearance),
         "Generated",
     )
@@ -504,9 +515,14 @@ def _pcb_clamps(config: EnclosureConfig) -> List[object]:
 
 
 def _clip_parts(config: EnclosureConfig) -> List[object]:
-    clip_inner_z = config.body_d + config.clip_gap
-    clip_center_z = clip_inner_z + config.clip_t / 2
     clip_center_y = 1.0
+    root_y = clip_center_y + config.clip_length / 2
+    tip_y = clip_center_y - config.clip_length / 2
+    gap_slope = (config.clip_gap - config.clip_tip_gap) / config.clip_length
+    clip_angle = math.atan(gap_slope)
+    center_gap = (config.clip_gap + config.clip_tip_gap) / 2
+    clip_center_z = config.body_d + center_gap + config.clip_t / 2
+
     arm = rounded_box(
         "ChestClip_Arm",
         (config.clip_w, config.clip_length, config.clip_t),
@@ -514,20 +530,29 @@ def _clip_parts(config: EnclosureConfig) -> List[object]:
         1.4,
         "Generated",
     )
+    arm.rotation_euler.x = clip_angle
+    bpy.context.view_layer.objects.active = arm
+    arm.select_set(True)
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+    arm.select_set(False)
+
     root = rounded_box(
         "ChestClip_Root",
-        (config.clip_w, 4.0, config.clip_gap + config.clip_t),
-        (0.0, 14.0, config.body_d + (config.clip_gap + config.clip_t) / 2),
+        (config.clip_w, 5.0, config.clip_gap + config.clip_t),
+        (0.0, root_y - 2.0, config.body_d + (config.clip_gap + config.clip_t) / 2),
         1.2,
         "Generated",
     )
+
+    lip_y = tip_y + 0.8
+    lip_gap = config.clip_tip_gap + gap_slope * (lip_y - tip_y)
     lower_lip = rounded_box(
         "ChestClip_RetentionLip",
         (config.clip_w, 3.5, config.clip_t + config.clip_lip),
         (
             0.0,
-            -13.2,
-            clip_center_z - config.clip_lip / 2,
+            lip_y,
+            config.body_d + lip_gap + config.clip_t / 2 - config.clip_lip / 2,
         ),
         0.8,
         "Generated",
@@ -678,6 +703,28 @@ def _world_bounds(obj) -> Tuple[Tuple[float, float, float], Tuple[float, float, 
     minimum = tuple(min(corner[axis] for corner in corners) for axis in range(3))
     maximum = tuple(max(corner[axis] for corner in corners) for axis in range(3))
     return minimum, maximum
+
+
+def _mirror_objects_yz(objects: Iterable[object]) -> None:
+    """Mirror complete assembled geometry across the global YZ plane."""
+    mirror = Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0))
+    for obj in objects:
+        if obj.type != "MESH":
+            continue
+
+        old_world = obj.matrix_world.copy()
+        new_world = old_world.copy()
+        new_world.translation = mirror @ old_world.translation
+        obj.data.transform(new_world.inverted() @ mirror @ old_world)
+        obj.matrix_world = new_world
+
+        mesh = bmesh.new()
+        mesh.from_mesh(obj.data)
+        bmesh.ops.recalc_face_normals(mesh, faces=list(mesh.faces))
+        mesh.normal_update()
+        mesh.to_mesh(obj.data)
+        mesh.free()
+        obj.data.update()
 
 
 def _export_stl(
@@ -849,6 +896,8 @@ def build_all(output_root: str | Path) -> Dict[str, object]:
     references = build_references(DEFAULT_CONFIG)
     front = build_front_cover(DEFAULT_CONFIG)
     rear = build_rear_shell(DEFAULT_CONFIG)
+    if MIRROR_YZ:
+        _mirror_objects_yz([*references.values(), front, rear])
     errors = {
         front.name: validate_print_mesh(front),
         rear.name: validate_print_mesh(rear),

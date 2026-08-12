@@ -59,19 +59,25 @@ class EnclosureConfig:
 
     front_plate_t: float = 1.2
     front_lip_depth: float = 2.3
+    front_lip_wall: float = 1.6
+    front_lip_overlap: float = 0.6
     mating_clearance: float = 0.3
     rear_plate_t: float = 1.2
 
-    usb_opening_w: float = 12.0
-    usb_opening_h: float = 5.5
+    # USB1 is a top-side TYPE-C-16PIN-2MD-073 receptacle. EasyEDA reports a
+    # 9.848 mm pad envelope; these dimensions include FDM fit clearance.
+    usb_opening_w: float = 10.6
+    usb_opening_h: float = 4.2
+    usb_opening_z: float = 6.5
     card_opening_w: float = 15.0
     card_opening_h: float = 3.2
 
     clip_w: float = 12.0
     clip_length: float = 30.0
-    clip_t: float = 1.6
-    clip_gap: float = 1.0
-    clip_lip: float = 0.4
+    clip_t: float = 1.8
+    clip_gap: float = 0.9
+    clip_tip_gap: float = 0.65
+    clip_lip: float = 0.2
 
 
 DEFAULT_CONFIG = EnclosureConfig()
@@ -123,9 +129,20 @@ def validate_config(config: EnclosureConfig) -> List[str]:
     if config.pcb_y + config.pcb_h > config.body_h - config.wall:
         errors.append("PCB exceeds bottom inner wall")
 
-    if config.clip_lip <= 0 or config.clip_lip >= config.clip_gap:
+    if config.clip_tip_gap <= 0 or config.clip_tip_gap > config.clip_gap:
+        errors.append("clip tip gap must be positive and no larger than root gap")
+    if config.clip_lip <= 0 or config.clip_lip >= config.clip_tip_gap:
         errors.append("clip retention lip must remain clear of rear shell")
-    elif config.clip_gap - config.clip_lip < 0.6:
-        errors.append("clip free-end clearance below 0.6 mm")
+    elif config.clip_tip_gap - config.clip_lip < 0.4:
+        errors.append("clip free-end clearance below 0.4 mm")
+
+    if config.usb_opening_w < 10.2:
+        errors.append("USB opening is narrower than the verified receptacle")
+    if config.usb_opening_h < 3.8:
+        errors.append("USB opening is shorter than the verified receptacle")
+    usb_z0 = config.usb_opening_z - config.usb_opening_h / 2
+    usb_z1 = config.usb_opening_z + config.usb_opening_h / 2
+    if usb_z0 < config.front_plate_t or usb_z1 > config.body_d:
+        errors.append("USB opening exceeds the enclosure side wall")
 
     return errors

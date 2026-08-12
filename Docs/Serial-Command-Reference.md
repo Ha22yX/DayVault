@@ -87,4 +87,8 @@ The hardware route is hold BOOT, press RST, then use the same command. Do not wr
 
 ## Battery and RTC
 
-The RTC stores UTC. The configured `tz` offset, default `480` (UTC+8), is used for recording names and the `INFO time=` field. A low battery with USB detached causes a clean recording finalization before STOP sleep. Recording start/stop is debounced for 100 ms.
+The RTC stores UTC. The configured `tz` offset, default `480` (UTC+8), is used for recording names and the `INFO time=` field.
+
+Battery voltage is measured from `BAT_SENSE` on PA0/ADC1_IN5 through the 1 MOhm / 1 MOhm divider. With USB detached, a 10-s moving average below 3.20 V for 10 consecutive checks cleanly finalizes the current Opus file and enters STOP2. The low-battery state remains latched through unloaded voltage rebound. Recording is enabled again only after USB is attached and the cell reaches 3.55 V. While latched and detached, the ADC and USB device stack are suspended; RTC wakes the MCU every 15 s to service the watchdog, while PA9 can wake it immediately on USB attachment.
+
+ADC results outside 2.0 V to 5.0 V are treated as invalid and cannot independently trigger low-battery sleep. Recording start/stop is debounced for 100 ms.

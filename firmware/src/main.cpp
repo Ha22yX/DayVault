@@ -96,7 +96,7 @@ static void dbg_iwdg_init(void)
     while ((RCC->CSR & RCC_CSR_LSIRDY) == 0 && (HAL_GetTick() - t0) < 50) { }
     IWDG->KR = 0x5555;
     IWDG->PR = 6;             /* /256 -> 125 Hz at 32 kHz LSI */
-    IWDG->RLR = 625;          /* ~5 s */
+    IWDG->RLR = 4095;         /* maximum timeout; LSI tolerance still requires margin */
     IWDG->KR = 0xCCCC;
     IWDG->KR = 0xAAAA;
 }
@@ -833,14 +833,28 @@ static void exti_usb_wake_enable(void)
 
 static void low_battery_enter_stop(void)
 {
+    static bool usb_suspended = false;
     if (rec_active) rec_stop();   /* clean finalize: drain DSP, write EOS, sync, close */
-    dt_set_wake(4);                       /* wake every 4 s to refresh IWDG + re-check */
-    dbg_iwdg_kick();                      /* refresh right before sleeping */
+    if (digitalRead(PIN_USB_DETECT) == LOW && !usb_suspended) {
+        CDC_deInit();
+        usb_suspended = true;
+    }
+    bat_suspend();
+    dt_set_wake(15);              /* safe against fast LSI; PA9 wakes immediately on USB */
+    dbg_iwdg_kick();
     HAL_SuspendTick();
-    HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
+    HAL_PWREx_EnterSTOP2Mode(PWR_STOPENTRY_WFI);
     /* --- resumed (RTC wake or USB EXTI) --- */
-    SystemClock_Config();                 /* PLL off in STOP -> restore 80 MHz */
+    SystemClock_Config();
     HAL_ResumeTick();
+    dt_wake_off();
+    if (digitalRead(PIN_USB_DETECT) == HIGH) {
+        bat_init();
+    }
+    if (usb_suspended && digitalRead(PIN_USB_DETECT) == HIGH) {
+        CDC_init();
+        usb_suspended = false;
+    }
 }
 
 void setup()
@@ -869,8 +883,10 @@ void setup()
 
 }
 
-#define BAT_SLEEP_MV   3000u
-#define BAT_RESUME_MV  3300u
+#define BAT_SLEEP_MV     3200u  /* loaded-cell threshold: finalize before brownout */
+#define BAT_RESUME_MV    3550u  /* charge sufficiently before allowing recording */
+#define BAT_VALID_MIN_MV 2000u
+#define BAT_VALID_MAX_MV 5000u
 #define BAT_HIST_N     20u   /* 20 s of history */
 #define BAT_WIN_N      10u   /* average over the previous 10 s */
 #define BAT_SLEEP_SECS 10u   /* the 10 s average must stay below for 10 continuous seconds */
@@ -909,42 +925,46 @@ void loop()
     static int last_usb = -1;
     static int usb_pending = -1;
     static uint32_t usb_pending_since = 0;
-    static uint8_t bat_asleep = 0;
+    static uint8_t low_power_latched = 0;
     static uint32_t last_bat_ms = 0;
     static uint32_t low_secs = 0;
 
 loop_restart:
     dbg_iwdg_kick();
 
-    if (bat_asleep) {
-        /* periodic wake (RTC 4 s): push a reading; resume when the previous-10 s
-           average is above the resume threshold or USB attaches */
-        uint16_t mv = bat_millivolts();
-        bat_hist_push(mv);
-        uint16_t avg = bat_win_avg();
-        if (avg >= BAT_RESUME_MV || digitalRead(PIN_USB_DETECT) == HIGH) {
-            bat_asleep = 0;              /* charged (e.g. USB) -> resume normal operation */
-            dt_wake_off();               /* stop periodic 4 s RTC wake */
-            bat_hist_reset();
-            low_secs = 0;
-        } else {
-            low_battery_enter_stop();    /* still low -> back to sleep (re-arms RTC wake) */
-            goto loop_restart;           /* skip remaining checks this pass */
+    if (low_power_latched) {
+        /* Do not restart on unloaded voltage rebound. A latched battery must be
+           attached to USB and charged above the recovery threshold. */
+        const bool usb_attached = digitalRead(PIN_USB_DETECT) == HIGH;
+        if (!usb_attached) {
+            low_battery_enter_stop();
+            goto loop_restart;
+        }
+        if ((millis() - last_bat_ms) >= 1000) {
+            last_bat_ms = millis();
+            uint16_t mv = bat_millivolts();
+            const bool valid = mv >= BAT_VALID_MIN_MV && mv <= BAT_VALID_MAX_MV;
+            if (valid && mv >= BAT_RESUME_MV) {
+                low_power_latched = 0;
+                bat_hist_reset();
+                low_secs = 0;
+            }
         }
     } else if ((millis() - last_bat_ms) >= 1000) {
         last_bat_ms = millis();
         uint16_t mv = bat_millivolts();
-        bat_hist_push(mv);
-        uint16_t avg = bat_win_avg();
+        const bool valid = mv >= BAT_VALID_MIN_MV && mv <= BAT_VALID_MAX_MV;
+        if (valid) bat_hist_push(mv);
+        uint16_t avg = valid ? bat_win_avg() : 0xFFFFu;
         /* each second, look at the previous-10 s average; it must stay below the
            threshold for BAT_SLEEP_SECS continuous seconds before sleeping */
         if (avg != 0xFFFFu && avg < BAT_SLEEP_MV && digitalRead(PIN_USB_DETECT) == LOW) {
             if (low_secs < 200u) low_secs++;
             if (low_secs >= BAT_SLEEP_SECS) {
-                low_battery_enter_stop();   /* returns on wake; re-checks below */
-                bat_asleep = 1;             /* latched until avg > BAT_RESUME_MV or USB */
+                low_power_latched = 1;
+                low_battery_enter_stop();
                 low_secs = 0;
-                goto loop_restart;          /* skip remaining checks this pass */
+                goto loop_restart;
             }
         } else {
             low_secs = 0;
@@ -1079,6 +1099,15 @@ loop_restart:
                         Serial.print("CIRC free_before="); Serial.print((uint32_t)(fb >> 20)); Serial.print("MB");
                         Serial.print(" deleted="); Serial.print(del);
                         Serial.print(" free_after="); Serial.print((uint32_t)(fa >> 20)); Serial.println("MB");
+                    } else if (strncmp(line, "DELETE ", 7) == 0) {
+                        const char* target = line + 7;
+                        int result = fs_delete_recording(
+                            target, rec_active ? rec_name + 3 : NULL);
+                        if (result == (int)FR_OK) {
+                            Serial.print("DELETE OK name="); Serial.println(target);
+                        } else {
+                            Serial.print("DELETE FAIL result="); Serial.println(result);
+                        }
                     } else if (strncmp(line, "DELOLDEST", 9) == 0) {
                         int del = fs_delete_oldest(rec_active ? rec_name + 3 : NULL);
                         Serial.print("DELOLDEST deleted="); Serial.println(del);
@@ -1426,7 +1455,11 @@ loop_restart:
         usb_pending_since = millis();
     }
     if (usb_pending >= 0 && (millis() - usb_pending_since) >= 100) {
-        if (usb_pending == 0) rec_start(); else rec_stop();
+        if (usb_pending == 0) {
+            if (!low_power_latched) rec_start();
+        } else {
+            rec_stop();
+        }
         usb_pending = -1;
     }
     if (rec_active) {
